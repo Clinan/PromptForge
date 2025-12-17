@@ -11,6 +11,7 @@ import type {
   UserPromptPreset
 } from './types';
 import { plugins } from './lib/plugins';
+import { newId } from './lib/id';
 import { decryptBytes, encryptBytes, unzipSingleFile, zipSingleFile } from './lib/secureZip';
 import FloatingActionPanel from './components/FloatingActionPanel.vue';
 import ProviderPanel from './components/ProviderPanel.vue';
@@ -35,7 +36,7 @@ const codeDialogTitle = ref('');
 const codeDialogCode = ref('');
 
 const initialUserPrompt: UserPromptPreset = {
-  id: crypto.randomUUID(),
+  id: newId(),
   text: 'Compare how each slot reacts to this message.'
 };
 
@@ -117,7 +118,7 @@ function loadEditorState() {
       const allowedProfileIds = new Set(providerProfiles.value.map((p) => p.id));
       slots.value = parsed.slots.map((slot) => ({
         ...createSlot(),
-        id: typeof slot.id === 'string' ? slot.id : crypto.randomUUID(),
+        id: typeof slot.id === 'string' ? slot.id : newId(),
         providerProfileId:
           typeof slot.providerProfileId === 'string' && allowedProfileIds.has(slot.providerProfileId)
             ? slot.providerProfileId
@@ -255,7 +256,7 @@ function addProfile() {
     return;
   }
   const profile: ProviderProfile = {
-    id: crypto.randomUUID(),
+    id: newId(),
     name: newProfile.name.trim(),
     apiKey: newProfile.apiKey.trim(),
     baseUrl: newProfile.baseUrl.trim() || defaultProviderTemplate.value,
@@ -286,7 +287,7 @@ function createSlot(copyFrom?: Slot): Slot {
   const provider = providerProfiles.value.find((p) => p.id === providerProfileId);
   const pluginId = provider?.pluginId ?? copyFrom?.pluginId ?? plugins[0].id;
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     providerProfileId,
     pluginId,
     modelId: copyFrom?.modelId ?? 'gpt-4o-mini',
@@ -465,7 +466,7 @@ async function runSlot(slot: Slot) {
   } finally {
     slot.metrics.totalMs = performance.now() - start;
     const historyItem: HistoryItem = {
-      id: crypto.randomUUID(),
+      id: newId(),
       createdAt: Date.now(),
       star: false,
       title: `Run ${new Date().toLocaleString()}`,
@@ -505,11 +506,11 @@ function toggleStar(id: string) {
 function loadHistoryIntoEditor(item: HistoryItem) {
   const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt;
   const restored = Array.isArray(item.requestSnapshot.userPrompts)
-    ? item.requestSnapshot.userPrompts.map((text) => ({ id: crypto.randomUUID(), text }))
+    ? item.requestSnapshot.userPrompts.map((text) => ({ id: newId(), text }))
     : legacyUserPrompt
-        ? [{ id: crypto.randomUUID(), text: legacyUserPrompt }]
+        ? [{ id: newId(), text: legacyUserPrompt }]
         : [];
-  shared.userPrompts = restored.length ? restored : [{ id: crypto.randomUUID(), text: '' }];
+  shared.userPrompts = restored.length ? restored : [{ id: newId(), text: '' }];
   shared.toolsDefinition = item.requestSnapshot.toolsDefinition;
   slots.value = item.requestSnapshot.systemPrompt
     ? [

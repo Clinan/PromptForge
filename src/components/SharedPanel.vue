@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SharedState, UserPromptPreset } from '../types';
+import { newId } from '../lib/id';
 
 const props = defineProps<{
   shared: SharedState;
@@ -7,7 +8,7 @@ const props = defineProps<{
 
 function addUserPrompt() {
   const prompt: UserPromptPreset = {
-    id: crypto.randomUUID(),
+    id: newId(),
     text: ''
   };
   props.shared.userPrompts.push(prompt);
