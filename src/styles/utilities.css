@@ -1,0 +1,140 @@
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.row > * {
+  flex: 1;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.badge {
+  background: rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  text-transform: capitalize;
+}
+
+.badge[data-status='running'] {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
+  color: rgba(29, 78, 216, 0.9);
+}
+
+.badge[data-status='done'] {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: rgba(5, 150, 105, 0.95);
+}
+
+.badge[data-status='error'] {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: rgba(220, 38, 38, 0.95);
+}
+
+.small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.output-box {
+  background: #0b1224;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 10px;
+  min-height: 120px;
+  white-space: pre-wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e0f2fe;
+  color: #0c4a6e;
+  padding: 4px 8px;
+  border-radius: 8px;
+  margin-right: 4px;
+  font-size: 12px;
+}
+
+.metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.metrics .chip {
+  margin-bottom: 4px;
+}
+
+.pill {
+  border-radius: 999px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+.app-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, #0f172a 0%, #1d4ed8 45%, #0f172a 85%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.app-subtitle {
+  font-size: 12px;
+  color: rgba(71, 85, 105, 0.85);
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-weight: 900;
+  font-size: 14px;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.section-subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(71, 85, 105, 0.82);
+}

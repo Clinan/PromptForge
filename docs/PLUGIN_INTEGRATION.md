@@ -165,3 +165,4 @@ plugins.push(aliyunDashScope);
 如果需要使用私有网关或企业代理，可在 Provider Profile 中覆盖 Base URL；插件会优先使用 Profile 中的配置。
 
 通过以上步骤，即可为 PromptForge 添加新的模型厂商插件，并保持与现有运行、历史、cURL 导出等功能一致。
+
