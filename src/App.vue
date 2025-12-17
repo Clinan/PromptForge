@@ -20,6 +20,7 @@ import AppHeader from './components/AppHeader.vue';
 import SlotsSection from './components/SlotsSection.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import CodeDialog from './components/CodeDialog.vue';
+import HistoryLoadDialog from './components/HistoryLoadDialog.vue';
 
 const localStorageKey = 'promptforge-profiles';
 const editorStorageKey = 'promptforge-editor-state-v1';
@@ -36,9 +37,22 @@ const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
 const codeDialogCode = ref('');
 
+const historyLoadOpen = ref(false);
+const historyLoadItem = ref<HistoryItem | null>(null);
+const historyLoadOptions = reactive({
+  provider: true,
+  model: true,
+  systemPrompt: true,
+  params: true,
+  userPrompts: true,
+  tools: true,
+  output: true,
+  metrics: true
+});
+
 const initialUserPrompt: UserPromptPreset = {
   id: newId(),
-  text: 'Compare how each slot reacts to this message.'
+  text: 'hello'
 };
 
 const shared = reactive<SharedState>({
@@ -326,7 +340,9 @@ async function refreshModelsForSlotWithOptions(slot: Slot, opts: { force?: boole
   try {
     const models = await plugin.listModels(profile);
     modelsByKey[cacheKey] = models;
-    await modelCacheStore.setItem(cacheKey, { savedAt: Date.now(), models });
+    // 避免把 Proxy/不可克隆对象写入 IndexedDB
+    const plainModels = JSON.parse(JSON.stringify(models)) as { id: string; label: string }[];
+    await modelCacheStore.setItem(cacheKey, { savedAt: Date.now(), models: plainModels });
   } catch (err) {
     console.warn('加载模型列表失败', err);
   } finally {
@@ -342,6 +358,8 @@ function modelOptions(slot: Slot) {
 }
 
 function onProviderChange(slot: Slot) {
+  // 切换 Provider 后默认清空 model（避免误用旧 provider 的 model）
+  slot.modelId = '';
   resolvePluginId(slot);
   refreshModelsForSlot(slot);
 }
@@ -362,7 +380,9 @@ async function forceRefreshModels(slot: Slot) {
 	}
 
 async function persistHistory(items: HistoryItem[]) {
-  await historyStore.setItem('items', items);
+  // Vue 的 reactive/ref 可能包含 Proxy，IndexedDB（localforage）无法结构化克隆，会触发 DataCloneError
+  const plain = JSON.parse(JSON.stringify(items)) as HistoryItem[];
+  await historyStore.setItem('items', plain);
 }
 
 function mergeParams(slot: Slot) {
@@ -449,7 +469,7 @@ async function runSlot(slot: Slot) {
       createdAt: Date.now(),
       star: false,
       title: `Run ${new Date().toLocaleString()}`,
-      providerProfileSnapshot: profile,
+      providerProfileSnapshot: { ...profile },
       requestSnapshot: { ...request, systemPrompt: slot.systemPrompt },
       responseSnapshot: {
         outputText: slot.output,
@@ -483,24 +503,74 @@ function toggleStar(id: string) {
 }
 
 function loadHistoryIntoEditor(item: HistoryItem) {
+  historyLoadItem.value = item;
+  historyLoadOpen.value = true;
+}
+
+function applyHistoryLoad() {
+  const item = historyLoadItem.value;
+  if (!item) return;
+
+  const targetSlot = selectedSlots.value[0] || slots.value[0] || createSlot();
+  if (!slots.value.length) slots.value = [targetSlot];
+
   const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt;
-  const restored = Array.isArray(item.requestSnapshot.userPrompts)
-    ? item.requestSnapshot.userPrompts.map((text) => ({ id: newId(), text }))
+  const userPrompts = Array.isArray(item.requestSnapshot.userPrompts)
+    ? item.requestSnapshot.userPrompts
     : legacyUserPrompt
-        ? [{ id: newId(), text: legacyUserPrompt }]
-        : [];
-  shared.userPrompts = restored.length ? restored : [{ id: newId(), text: '' }];
-  shared.toolsDefinition = item.requestSnapshot.toolsDefinition;
-  slots.value = item.requestSnapshot.systemPrompt
-    ? [
-        {
-          ...createSlot(),
-          systemPrompt: item.requestSnapshot.systemPrompt,
-          modelId: item.requestSnapshot.modelId
-        }
-      ]
-    : slots.value;
-  alert('历史已载入，System Prompt 已替换，其他输入覆盖为历史。');
+      ? [legacyUserPrompt]
+      : [];
+
+  if (historyLoadOptions.userPrompts) {
+    shared.userPrompts = userPrompts.length ? userPrompts.map((text) => ({ id: newId(), text })) : [{ id: newId(), text: '' }];
+  }
+
+  if (historyLoadOptions.tools) {
+    shared.toolsDefinition = item.requestSnapshot.toolsDefinition;
+  }
+
+  if (historyLoadOptions.provider && item.providerProfileSnapshot) {
+    const snap = item.providerProfileSnapshot;
+    const existing = providerProfiles.value.find((p) => p.id === snap.id);
+    if (!existing) {
+      providerProfiles.value.push({ ...snap });
+      saveProfiles();
+    }
+    targetSlot.providerProfileId = snap.id;
+    targetSlot.pluginId = snap.pluginId;
+    refreshModelsForSlot(targetSlot);
+  }
+
+  if (historyLoadOptions.model) {
+    targetSlot.modelId = item.requestSnapshot.modelId || '';
+  }
+
+  if (historyLoadOptions.systemPrompt) {
+    targetSlot.systemPrompt = item.requestSnapshot.systemPrompt || '';
+  }
+
+  if (historyLoadOptions.params) {
+    targetSlot.paramOverride = item.requestSnapshot.params ? { ...(item.requestSnapshot.params as Record<string, unknown>) } : null;
+  }
+
+  if (historyLoadOptions.output) {
+    targetSlot.output = item.responseSnapshot.outputText || '';
+    targetSlot.status = targetSlot.output ? 'done' : 'idle';
+    targetSlot.historyId = item.id;
+  }
+
+  if (historyLoadOptions.metrics) {
+    targetSlot.metrics = {
+      ...targetSlot.metrics,
+      ttfbMs: item.responseSnapshot.metrics?.ttfbMs ?? null,
+      totalMs: item.responseSnapshot.metrics?.totalMs ?? null,
+      tokens: item.responseSnapshot.usage,
+      toolCalls: item.responseSnapshot.toolCalls
+    };
+  }
+
+  historyLoadOpen.value = false;
+  historyLoadItem.value = null;
 }
 
 onMounted(async () => {
@@ -611,6 +681,14 @@ watch(
 		      @close="showHistory = false"
 		      @load="loadHistoryIntoEditor"
 		      @toggle-star="toggleStar"
+		    />
+
+		    <HistoryLoadDialog
+		      :open="historyLoadOpen"
+		      :item="historyLoadItem"
+		      :options="historyLoadOptions"
+		      @close="historyLoadOpen = false"
+		      @confirm="applyHistoryLoad"
 		    />
 
 		    <CodeDialog

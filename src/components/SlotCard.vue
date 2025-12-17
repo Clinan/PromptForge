@@ -27,15 +27,15 @@ const modelSuggestions = computed(() => {
   const rawQuery = (props.slot.modelId || '').trim().toLowerCase();
   const list = props.modelOptions || [];
   const matched = rawQuery ? list.filter((m) => m.id.toLowerCase().startsWith(rawQuery)) : list;
-  const top = matched.slice(0, 5);
+  const results = matched;
   if (rawQuery) {
-    const exactIdx = top.findIndex((m) => m.id.toLowerCase() === rawQuery);
+    const exactIdx = results.findIndex((m) => m.id.toLowerCase() === rawQuery);
     if (exactIdx > 0) {
-      const [exact] = top.splice(exactIdx, 1);
-      top.unshift(exact);
+      const [exact] = results.splice(exactIdx, 1);
+      results.unshift(exact);
     }
   }
-  return top;
+  return results;
 });
 
 function openModelSuggestions() {
