@@ -12,11 +12,12 @@ import type {
 } from './types';
 import { plugins } from './lib/plugins';
 import { newId } from './lib/id';
-import { decryptBytes, encryptBytes, unzipSingleFile, zipSingleFile } from './lib/secureZip';
+import { buildProvidersExportZip, downloadBlob, parseProvidersImportZip } from './lib/providerTransfer';
 import FloatingActionPanel from './components/FloatingActionPanel.vue';
 import ProviderPanel from './components/ProviderPanel.vue';
 import SharedPanel from './components/SharedPanel.vue';
-import SlotCard from './components/SlotCard.vue';
+import AppHeader from './components/AppHeader.vue';
+import SlotsSection from './components/SlotsSection.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import CodeDialog from './components/CodeDialog.vue';
 
@@ -198,19 +199,11 @@ async function exportProvidersEncryptedZip() {
     return;
   }
   try {
-    const json = JSON.stringify(providerProfiles.value, null, 2);
-    const encrypted = await encryptBytes(json, password);
-    const zip = zipSingleFile('providers.pfz', encrypted);
-    const blob = new Blob([zip], { type: 'application/zip' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `promptforge-providers.zip`;
-    a.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const blob = await buildProvidersExportZip(providerProfiles.value, password);
+    downloadBlob(blob, 'promptforge-providers.zip');
   } catch (err) {
     console.error(err);
-    alert('导出失败，请查看控制台错误。');
+    alert(`导出失败：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -218,28 +211,14 @@ async function importProvidersEncryptedZip(file: File) {
   const password = prompt('请输入导入密码');
   if (!password) return;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const { data } = unzipSingleFile(bytes);
-    const json = await decryptBytes(data, password);
-    const parsed = JSON.parse(json) as unknown;
-    if (!Array.isArray(parsed)) throw new Error('providers 数据格式不正确');
-    const valid = (parsed as any[]).every(
-      (p) =>
-        p &&
-        typeof p.id === 'string' &&
-        typeof p.name === 'string' &&
-        typeof p.apiKey === 'string' &&
-        typeof p.baseUrl === 'string' &&
-        typeof p.pluginId === 'string'
-    );
-    if (!valid) throw new Error('providers 字段不完整');
+    const parsed = await parseProvidersImportZip(file, password);
     localStorage.setItem(localStorageKey, JSON.stringify(parsed));
     loadProfiles();
     resetNewProfile();
     alert('导入成功（已覆盖本地 Provider 列表）');
   } catch (err) {
     console.error(err);
-    alert('导入失败：密码错误或文件损坏/格式不支持。');
+    alert(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -587,19 +566,11 @@ watch(
 
 <template>
   <div>
-    <header class="app-header">
-      <div class="app-brand">
-        <div class="app-title">PromptForge</div>
-        <div class="app-subtitle">提示词对比调试台 · 多 Slot 并行对比</div>
-      </div>
-      <div class="row" style="flex: 0 0 auto">
-        <button class="ghost pill" style="flex: 0 0 auto" @click="showProviderManager = true">管理 Providers</button>
-      </div>
-    </header>
+    <AppHeader @openProviders="showProviderManager = true" />
 
-		    <ProviderPanel
-		      v-if="showProviderManager"
-		      :plugins="plugins"
+			    <ProviderPanel
+			      v-if="showProviderManager"
+			      :plugins="plugins"
 		      :providerProfiles="providerProfiles"
 		      :newProfile="newProfile"
 		      :defaultProviderTemplate="defaultProviderTemplate"
@@ -609,36 +580,23 @@ watch(
 		      :onExportProviders="exportProvidersEncryptedZip"
 		      :onImportProviders="importProvidersEncryptedZip"
 		      @close="showProviderManager = false"
-		    />
-	
-		    <SharedPanel :shared="shared" />
+			    />
+		
+			    <SharedPanel :shared="shared" />
 
-			    <section>
-			      <div class="section-head">
-			        <div>
-			          <div class="section-title">Slots</div>
-			          <div class="section-subtitle">每个 Slot 独立 System Prompt，用于对比输出差异。</div>
-			        </div>
-			      </div>
-			      <div class="slot-grid">
-			        <SlotCard
-			          v-for="slot in slots"
-			          :key="slot.id"
-			          :slot="slot"
-			          :providerProfiles="providerProfiles"
-			          :modelOptions="modelOptions(slot)"
-			          :refreshingModels="!!refreshingModelsBySlotId[slot.id]"
-			          :streamOutput="shared.streamOutput"
-			          :disableRemove="slots.length === 1"
-			          @copy="addSlot"
-			          @remove="removeSlot"
-			          @run="runSlot"
-			          @export-curl="exportCurl"
-			          @provider-change="onProviderChange"
-			          @refresh-models="forceRefreshModels"
-			        />
-		      </div>
-		    </section>
+			    <SlotsSection
+			      :slots="slots"
+			      :providerProfiles="providerProfiles"
+			      :streamOutput="shared.streamOutput"
+			      :refreshingModelsBySlotId="refreshingModelsBySlotId"
+			      :modelOptions="modelOptions"
+			      @copy="addSlot"
+			      @remove="removeSlot"
+			      @run="runSlot"
+			      @export-curl="exportCurl"
+			      @provider-change="onProviderChange"
+			      @refresh-models="forceRefreshModels"
+			    />
 
 			    <FloatingActionPanel
 			      :showHistory="showHistory"
