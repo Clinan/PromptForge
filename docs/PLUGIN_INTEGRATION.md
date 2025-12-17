@@ -23,8 +23,8 @@
 1. **确定厂商调用协议与流式格式**：确认请求 URL、鉴权头、是否兼容 OpenAI 格式、流式分隔（SSE / chunk / 普通 JSON）。
 2. **在 `src/App.vue` 中实现插件对象**：按照下面的示例创建 `Plugin` 对象，放入 `plugins` 数组。确保 `id` 唯一且有易读的 `name`。
 3. **实现模型列表**：
-   - 若厂商提供模型查询接口，可在 `listModels` 中调用后转成 `{id,label}`；
-   - 若固定模型，可返回硬编码数组。
+   - 优先调用厂商的 models 查询接口（通常为 `GET /v1/models` 或兼容路径），在 `listModels` 中发起请求并将响应转成 `{id,label}`；
+   - 可准备兜底的 fallback 列表，确保接口异常时仍可选择常用模型。
 4. **实现聊天调用**：
    - 将 `PluginRequest` 映射为厂商的请求体；
    - 使用 `fetch` 发起请求，处理鉴权与基础路径；
@@ -41,16 +41,26 @@
 
 ```ts
 // 片段：添加到 src/App.vue 的 plugins 数组
-const aliyunDashScope: Plugin = {
-  id: 'aliyun-dashscope',
-  name: 'Aliyun DashScope (通义)',
-  async listModels() {
-    // 如需实时获取，可调用厂商模型列表接口；这里返回常用通义模型
-    return [
-      { id: 'qwen-plus', label: 'qwen-plus' },
-      { id: 'qwen-max', label: 'qwen-max' }
-    ];
-  },
+  const aliyunDashScope: Plugin = {
+    id: 'aliyun-dashscope',
+    name: 'Aliyun DashScope (通义)',
+    async listModels(config) {
+      try {
+        const resp = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/models', {
+          headers: { Authorization: `Bearer ${config.apiKey}` }
+        });
+        if (!resp.ok) throw new Error('model list failed');
+        const data = await resp.json();
+        const list = (data?.data || []) as { id: string }[];
+        if (list.length) return list.map((m) => ({ id: m.id, label: m.id }));
+      } catch (err) {
+        console.warn('fallback to default qwen list', err);
+      }
+      return [
+        { id: 'qwen-plus', label: 'qwen-plus' },
+        { id: 'qwen-max', label: 'qwen-max' }
+      ];
+    },
   async *invokeChat(config, request, options) {
     const controller = new AbortController();
     if (options.signal) {
@@ -145,12 +155,12 @@ plugins.push(aliyunDashScope);
 
 仓库目前已经预置了多个常见厂商的插件，便于直接选择 Slot -> Plugin 即可运行：
 
-| 插件 ID | 显示名称 | 默认 Base URL | 内置模型列表示例 | 鉴权方式 |
+| 插件 ID | 显示名称 | 默认 Base URL | 模型获取方式 | 鉴权方式 |
 | --- | --- | --- | --- | --- |
-| `openai-compatible` | OpenAI-Compatible (Mock) | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini`、`gpt-3.5-turbo` | `Authorization: Bearer <API_KEY>` |
-| `aliyun-dashscope` | Aliyun DashScope (通义) | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | `qwen-plus`、`qwen-max`、`qwen-vl-max` | `Authorization: Bearer <API_KEY>` |
-| `kimi-moonshot` | Kimi (Moonshot) | `https://api.moonshot.cn/v1/chat/completions` | `moonshot-v1-8k`、`moonshot-v1-32k`、`moonshot-v1-128k` | `Authorization: Bearer <API_KEY>` |
-| `ark-bytedance` | 方舟 Ark (ByteDance) | `https://ark.cn-beijing.volces.com/api/v3/chat/completions` | `doubao-pro-32k`、`doubao-vision`、`doubao-lite-128k` | `Authorization: Bearer <API_KEY>` |
+| `openai-compatible` | OpenAI-Compatible (Mock) | `https://api.openai.com/v1/chat/completions` | 动态调用 `/v1/models`，失败回退到常用模型列表 | `Authorization: Bearer <API_KEY>` |
+| `aliyun-dashscope` | Aliyun DashScope (通义) | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | 动态调用 `/compatible-mode/v1/models`，失败回退到通义常用模型 | `Authorization: Bearer <API_KEY>` |
+| `kimi-moonshot` | Kimi (Moonshot) | `https://api.moonshot.cn/v1/chat/completions` | 动态调用 `/v1/models`，失败回退到 Kimi 常用模型 | `Authorization: Bearer <API_KEY>` |
+| `ark-bytedance` | 方舟 Ark (ByteDance) | `https://ark.cn-beijing.volces.com/api/v3/chat/completions` | 动态调用 `/api/v3/models`，失败回退到 Doubao 常用模型 | `Authorization: Bearer <API_KEY>` |
 
 如果需要使用私有网关或企业代理，可在 Provider Profile 中覆盖 Base URL；插件会优先使用 Profile 中的配置。
 

@@ -140,8 +140,9 @@ type OpenAICompatibleConfig = {
   id: string;
   name: string;
   defaultUrl: string;
+  defaultModelsUrl?: string;
   apiKeyPlaceholder: string;
-  models: { id: string; label: string }[];
+  fallbackModels: { id: string; label: string }[];
   authHeader?: string;
   authPrefix?: string;
 };
@@ -153,8 +154,40 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
   return {
     id: options.id,
     name: options.name,
-    async listModels() {
-      return options.models;
+    async listModels(config) {
+      const chatUrl = config.baseUrl || options.defaultUrl;
+      const modelsUrl =
+        options.defaultModelsUrl ||
+        (chatUrl.endsWith('/chat/completions')
+          ? chatUrl.replace(/\/chat\/completions$/, '/models')
+          : `${chatUrl.replace(/\/chat\/completions$/, '')}/models`);
+
+      try {
+        const resp = await fetch(modelsUrl, {
+          headers: {
+            [authHeader]: `${authPrefix}${config.apiKey}`.trim()
+          }
+        });
+
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        const list = Array.isArray(data?.data)
+          ? (data.data as { id: string; description?: string }[])
+          : [];
+        const mapped = list.map((item) => ({
+          id: item.id,
+          label: item.description ? `${item.id} (${item.description})` : item.id
+        }));
+
+        if (mapped.length) return mapped;
+      } catch (err) {
+        console.warn(`加载 ${options.name} 模型列表失败，将使用备用列表`, err);
+      }
+
+      return options.fallbackModels;
     },
     async *invokeChat(config, request, opts) {
       const controller = new AbortController();
@@ -219,7 +252,7 @@ const plugins: Plugin[] = [
     name: 'OpenAI-Compatible (Mock)',
     defaultUrl: 'https://api.openai.com/v1/chat/completions',
     apiKeyPlaceholder: '{{OPENAI_API_KEY}}',
-    models: [
+    fallbackModels: [
       { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
       { id: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo' }
     ]
@@ -229,7 +262,8 @@ const plugins: Plugin[] = [
     name: 'Aliyun DashScope (通义)',
     defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
     apiKeyPlaceholder: '{{ALIYUN_API_KEY}}',
-    models: [
+    defaultModelsUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+    fallbackModels: [
       { id: 'qwen-plus', label: 'qwen-plus' },
       { id: 'qwen-max', label: 'qwen-max' },
       { id: 'qwen-vl-max', label: 'qwen-vl-max' }
@@ -240,7 +274,8 @@ const plugins: Plugin[] = [
     name: 'Kimi (Moonshot)',
     defaultUrl: 'https://api.moonshot.cn/v1/chat/completions',
     apiKeyPlaceholder: '{{KIMI_API_KEY}}',
-    models: [
+    defaultModelsUrl: 'https://api.moonshot.cn/v1/models',
+    fallbackModels: [
       { id: 'moonshot-v1-8k', label: 'moonshot-v1-8k' },
       { id: 'moonshot-v1-32k', label: 'moonshot-v1-32k' },
       { id: 'moonshot-v1-128k', label: 'moonshot-v1-128k' }
@@ -251,7 +286,8 @@ const plugins: Plugin[] = [
     name: '方舟 Ark (ByteDance)',
     defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
     apiKeyPlaceholder: '{{ARK_API_KEY}}',
-    models: [
+    defaultModelsUrl: 'https://ark.cn-beijing.volces.com/api/v3/models',
+    fallbackModels: [
       { id: 'doubao-pro-32k', label: 'doubao-pro-32k' },
       { id: 'doubao-vision', label: 'doubao-vision' },
       { id: 'doubao-lite-128k', label: 'doubao-lite-128k' }
