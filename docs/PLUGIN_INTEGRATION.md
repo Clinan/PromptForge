@@ -137,8 +137,21 @@ plugins.push(aliyunDashScope);
 ### 其他厂商接入提示
 
 - **非 OpenAI 兼容接口**：需要在 `invokeChat` 中自行构造请求体与解析响应，确保最终 `yield` 字符串片段即可。
-- **SSE 以外的流式格式**：若返回 chunked JSON，可直接在读取到的文本上解析；若不支持流式，`invokeChat` 可一次性 `yield` 完整内容。
-- **鉴权差异**：根据厂商要求添加 `Bearer`、`api-key`、`X-Api-Key` 等 header；如需 query 参数鉴权，请在 `fetch` URL 上附加。
-- **模型列表动态拉取**：如果接口需要鉴权，可以在 `listModels` 中复用 Provider Profile 的密钥。
+ - **SSE 以外的流式格式**：若返回 chunked JSON，可直接在读取到的文本上解析；若不支持流式，`invokeChat` 可一次性 `yield` 完整内容。
+ - **鉴权差异**：根据厂商要求添加 `Bearer`、`api-key`、`X-Api-Key` 等 header；如需 query 参数鉴权，请在 `fetch` URL 上附加。
+ - **模型列表动态拉取**：如果接口需要鉴权，可以在 `listModels` 中复用 Provider Profile 的密钥。
+
+## 已内置的插件示例（开箱即用）
+
+仓库目前已经预置了多个常见厂商的插件，便于直接选择 Slot -> Plugin 即可运行：
+
+| 插件 ID | 显示名称 | 默认 Base URL | 内置模型列表示例 | 鉴权方式 |
+| --- | --- | --- | --- | --- |
+| `openai-compatible` | OpenAI-Compatible (Mock) | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini`、`gpt-3.5-turbo` | `Authorization: Bearer <API_KEY>` |
+| `aliyun-dashscope` | Aliyun DashScope (通义) | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | `qwen-plus`、`qwen-max`、`qwen-vl-max` | `Authorization: Bearer <API_KEY>` |
+| `kimi-moonshot` | Kimi (Moonshot) | `https://api.moonshot.cn/v1/chat/completions` | `moonshot-v1-8k`、`moonshot-v1-32k`、`moonshot-v1-128k` | `Authorization: Bearer <API_KEY>` |
+| `ark-bytedance` | 方舟 Ark (ByteDance) | `https://ark.cn-beijing.volces.com/api/v3/chat/completions` | `doubao-pro-32k`、`doubao-vision`、`doubao-lite-128k` | `Authorization: Bearer <API_KEY>` |
+
+如果需要使用私有网关或企业代理，可在 Provider Profile 中覆盖 Base URL；插件会优先使用 Profile 中的配置。
 
 通过以上步骤，即可为 PromptForge 添加新的模型厂商插件，并保持与现有运行、历史、cURL 导出等功能一致。

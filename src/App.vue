@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import localforage from 'localforage';
 
 type PluginRequest = {
@@ -93,34 +93,102 @@ const shared = reactive({
   }
 });
 
-const plugins: Plugin[] = [
-  {
-    id: 'openai-compatible',
-    name: 'OpenAI-Compatible (Mock)',
+const modelsByPlugin = reactive<Record<string, { id: string; label: string }[]>>({});
+
+function parseTools(toolsDefinition: string) {
+  try {
+    return toolsDefinition ? JSON.parse(toolsDefinition) : undefined;
+  } catch (err) {
+    console.warn('工具定义 JSON 解析失败，将忽略 tools。', err);
+    return undefined;
+  }
+}
+
+async function* streamOpenAIStyle(resp: Response) {
+  if (!resp.body) throw new Error('No stream body');
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done = false;
+
+  while (!done) {
+    const { value, done: readerDone } = await reader.read();
+    done = readerDone;
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.replace(/^data:\s*/, '');
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          yield delta as string;
+        }
+      } catch (err) {
+        console.warn('解析流式 chunk 失败', err, payload);
+      }
+    }
+  }
+}
+
+type OpenAICompatibleConfig = {
+  id: string;
+  name: string;
+  defaultUrl: string;
+  apiKeyPlaceholder: string;
+  models: { id: string; label: string }[];
+  authHeader?: string;
+  authPrefix?: string;
+};
+
+function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
+  const authHeader = options.authHeader || 'Authorization';
+  const authPrefix = options.authPrefix || 'Bearer ';
+
+  return {
+    id: options.id,
+    name: options.name,
     async listModels() {
-      return [
-        { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-        { id: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo' }
-      ];
+      return options.models;
     },
-    async *invokeChat(_config, request, options) {
-      const { signal } = options;
-      const chunks = [
-        'Analysing system prompt...',
-        'Applying shared user prompt...',
-        `Model ${request.modelId} summarises intent.`,
-        'Streaming simulated completion for quick validation.'
-      ];
-      const start = performance.now();
-      for (const chunk of chunks) {
-        if (signal?.aborted) break;
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        yield `${chunk}\n`;
+    async *invokeChat(config, request, opts) {
+      const controller = new AbortController();
+      if (opts.signal) {
+        opts.signal.addEventListener('abort', () => controller.abort(), { once: true });
       }
-      const elapsed = performance.now() - start;
-      if (!signal?.aborted) {
-        yield `Done in ${(elapsed / 1000).toFixed(2)}s.`;
+
+      const body = {
+        model: request.modelId,
+        messages: [
+          { role: 'system', content: request.systemPrompt },
+          { role: 'user', content: request.userPrompt }
+        ],
+        tools: parseTools(request.toolsDefinition),
+        stream: true,
+        ...request.params
+      };
+
+      const resp = await fetch(config.baseUrl || options.defaultUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [authHeader]: `${authPrefix}${config.apiKey}`.trim()
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${text}`);
       }
+
+      yield* streamOpenAIStyle(resp);
     },
     buildCurl(config, request) {
       const body = {
@@ -129,15 +197,68 @@ const plugins: Plugin[] = [
           { role: 'system', content: request.systemPrompt },
           { role: 'user', content: request.userPrompt }
         ],
-        tools: request.toolsDefinition ? JSON.parse(request.toolsDefinition) : undefined,
+        tools: parseTools(request.toolsDefinition),
+        stream: true,
         ...request.params
       };
-        const headerKey = config.apiKey ? config.apiKey : '{{OPENAI_API_KEY}}';
-        return `curl -H "Content-Type: application/json" -H "Authorization: Bearer ${headerKey}" ` +
-          `-X POST ${config.baseUrl || 'https://api.openai.com/v1/chat/completions'} ` +
-          `-d '${JSON.stringify(body, null, 2)}'`;
+
+      const apiKey = config.apiKey || options.apiKeyPlaceholder;
+      const url = config.baseUrl || options.defaultUrl;
+      return (
+        `curl -H "Content-Type: application/json" ` +
+        `-H "${authHeader}: ${authPrefix}${apiKey}" ` +
+        `-X POST ${url} -d '${JSON.stringify(body, null, 2)}'`
+      );
     }
-  }
+  };
+}
+
+const plugins: Plugin[] = [
+  createOpenAICompatiblePlugin({
+    id: 'openai-compatible',
+    name: 'OpenAI-Compatible (Mock)',
+    defaultUrl: 'https://api.openai.com/v1/chat/completions',
+    apiKeyPlaceholder: '{{OPENAI_API_KEY}}',
+    models: [
+      { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+      { id: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo' }
+    ]
+  }),
+  createOpenAICompatiblePlugin({
+    id: 'aliyun-dashscope',
+    name: 'Aliyun DashScope (通义)',
+    defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    apiKeyPlaceholder: '{{ALIYUN_API_KEY}}',
+    models: [
+      { id: 'qwen-plus', label: 'qwen-plus' },
+      { id: 'qwen-max', label: 'qwen-max' },
+      { id: 'qwen-vl-max', label: 'qwen-vl-max' }
+    ]
+  }),
+  createOpenAICompatiblePlugin({
+    id: 'kimi-moonshot',
+    name: 'Kimi (Moonshot)',
+    defaultUrl: 'https://api.moonshot.cn/v1/chat/completions',
+    apiKeyPlaceholder: '{{KIMI_API_KEY}}',
+    models: [
+      { id: 'moonshot-v1-8k', label: 'moonshot-v1-8k' },
+      { id: 'moonshot-v1-32k', label: 'moonshot-v1-32k' },
+      { id: 'moonshot-v1-128k', label: 'moonshot-v1-128k' }
+    ]
+  }),
+  createOpenAICompatiblePlugin({
+    id: 'ark-bytedance',
+    name: '方舟 Ark (ByteDance)',
+    defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    apiKeyPlaceholder: '{{ARK_API_KEY}}',
+    models: [
+      { id: 'doubao-pro-32k', label: 'doubao-pro-32k' },
+      { id: 'doubao-vision', label: 'doubao-vision' },
+      { id: 'doubao-lite-128k', label: 'doubao-lite-128k' }
+    ],
+    authHeader: 'Authorization',
+    authPrefix: 'Bearer '
+  })
 ];
 
 const slots = ref<Slot[]>([]);
@@ -185,6 +306,27 @@ function removeSlot(slotId: string) {
 }
 
 const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
+
+async function refreshModelsForSlot(slot: Slot) {
+  const plugin = getPlugin(slot);
+  try {
+    const profile = getProfile(slot) ?? { id: '', name: '', apiKey: '', baseUrl: '' };
+    modelsByPlugin[plugin.id] = await plugin.listModels(profile);
+    if (!modelsByPlugin[plugin.id].find((m) => m.id === slot.modelId)) {
+      slot.modelId = modelsByPlugin[plugin.id][0]?.id || slot.modelId;
+    }
+  } catch (err) {
+    console.warn('加载模型列表失败', err);
+  }
+}
+
+function modelOptions(slot: Slot) {
+  return modelsByPlugin[slot.pluginId] || [{ id: slot.modelId, label: slot.modelId }];
+}
+
+function onPluginChange(slot: Slot) {
+  refreshModelsForSlot(slot);
+}
 
 function toggleSelectAll(value: boolean) {
   slots.value.forEach((slot) => {
@@ -335,8 +477,16 @@ function loadHistoryIntoEditor(item: HistoryItem) {
 onMounted(async () => {
   loadProfiles();
   slots.value = [createSlot()];
+  await Promise.all(slots.value.map((slot) => refreshModelsForSlot(slot)));
   await loadHistory();
 });
+
+watch(
+  () => slots.value.map((slot) => `${slot.id}:${slot.pluginId}:${slot.providerProfileId}`),
+  () => {
+    slots.value.forEach((slot) => refreshModelsForSlot(slot));
+  }
+);
 </script>
 
 <template>
@@ -443,7 +593,7 @@ onMounted(async () => {
             </div>
             <div>
               <label>Plugin</label>
-              <select v-model="slot.pluginId">
+              <select v-model="slot.pluginId" @change="onPluginChange(slot)">
                 <option v-for="plugin in plugins" :key="plugin.id" :value="plugin.id">
                   {{ plugin.name }}
                 </option>
@@ -452,8 +602,9 @@ onMounted(async () => {
             <div>
               <label>Model</label>
               <select v-model="slot.modelId">
-                <option value="gpt-4o-mini">gpt-4o-mini</option>
-                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                <option v-for="model in modelOptions(slot)" :key="model.id" :value="model.id">
+                  {{ model.label }}
+                </option>
               </select>
             </div>
           </div>

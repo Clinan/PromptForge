@@ -13,6 +13,7 @@
 ## 2. 页面结构（建议的信息架构）
 
 > 💡 想要接入新的模型厂商？请参考《[插件接入指南](docs/PLUGIN_INTEGRATION.md)》，包含统一插件接口说明和阿里云 DashScope 示例。
+> 已预置的插件：OpenAI 兼容、阿里云 DashScope、Kimi（Moonshot）、方舟 Ark，直接在 Slot 中选择即可使用。
 
 ### 2.1 调试页（主页面）
 
