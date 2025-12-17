@@ -8,6 +8,8 @@ type PluginRequest = {
   toolsDefinition: string;
   params: Record<string, unknown>;
   modelId: string;
+  enableSuggestions: boolean;
+  stream: boolean;
 };
 
 type PluginInvokeOptions = {
@@ -18,6 +20,7 @@ type PluginInvokeOptions = {
 type Plugin = {
   id: string;
   name: string;
+  defaultBaseUrl?: string;
   listModels: (config: ProviderProfile) => Promise<{ id: string; label: string }[]>;
   invokeChat: (
     config: ProviderProfile,
@@ -32,6 +35,7 @@ type ProviderProfile = {
   name: string;
   apiKey: string;
   baseUrl: string;
+  pluginId: string;
 };
 
 type SlotMetrics = {
@@ -79,6 +83,8 @@ const providerProfiles = ref<ProviderProfile[]>([]);
 const historyItems = ref<HistoryItem[]>([]);
 const historyQuery = ref('');
 const showHistory = ref(false);
+const showProviderManager = ref(false);
+const activeHistoryId = ref<string | null>(null);
 
 const shared = reactive({
   userPrompt: 'Compare how each slot reacts to this message.',
@@ -90,10 +96,33 @@ const shared = reactive({
     stop: '',
     presence_penalty: 0,
     frequency_penalty: 0
-  }
+  },
+  enableSuggestions: true,
+  streamOutput: true
 });
 
+function setParamOverride(slot: Slot, key: string, value: unknown) {
+  if (value === '' || value === null || value === undefined || (typeof value === 'number' && Number.isNaN(value))) {
+    if (slot.paramOverride) {
+      const { [key]: _, ...rest } = slot.paramOverride;
+      slot.paramOverride = Object.keys(rest).length ? rest : null;
+    }
+    return;
+  }
+  slot.paramOverride = { ...(slot.paramOverride || {}), [key]: value };
+}
+
+const newProfile = reactive({
+  name: '',
+  apiKey: '',
+  baseUrl: '',
+  pluginId: plugins[0].id
+});
 const modelsByPlugin = reactive<Record<string, { id: string; label: string }[]>>({});
+const defaultProviderTemplate = computed(() => {
+  const plugin = plugins.find((p) => p.id === newProfile.pluginId);
+  return plugin?.defaultBaseUrl || 'https://api.openai.com/v1/chat/completions';
+});
 
 function parseTools(toolsDefinition: string) {
   try {
@@ -102,6 +131,17 @@ function parseTools(toolsDefinition: string) {
     console.warn('工具定义 JSON 解析失败，将忽略 tools。', err);
     return undefined;
   }
+}
+
+function removeEmptyEntries(obj: Record<string, unknown>) {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string' && value.trim() === '') return;
+    if (Array.isArray(value) && value.length === 0) return;
+    cleaned[key] = value;
+  });
+  return cleaned;
 }
 
 async function* streamOpenAIStyle(resp: Response) {
@@ -154,6 +194,7 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
   return {
     id: options.id,
     name: options.name,
+    defaultBaseUrl: options.defaultUrl,
     async listModels(config) {
       const chatUrl = config.baseUrl || options.defaultUrl;
       const modelsUrl =
@@ -195,6 +236,7 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
         opts.signal.addEventListener('abort', () => controller.abort(), { once: true });
       }
 
+      const useStream = opts.stream !== false && request.stream !== false;
       const body = {
         model: request.modelId,
         messages: [
@@ -202,17 +244,19 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
           { role: 'user', content: request.userPrompt }
         ],
         tools: parseTools(request.toolsDefinition),
-        stream: true,
-        ...request.params
+        stream: useStream,
+        ...request.params,
+        enable_suggestions: request.enableSuggestions
       };
 
+      const payload = removeEmptyEntries(body);
       const resp = await fetch(config.baseUrl || options.defaultUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           [authHeader]: `${authPrefix}${config.apiKey}`.trim()
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
 
@@ -221,19 +265,29 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
         throw new Error(`HTTP ${resp.status}: ${text}`);
       }
 
-      yield* streamOpenAIStyle(resp);
+      if (useStream) {
+        yield* streamOpenAIStyle(resp);
+      } else {
+        const data = await resp.json();
+        const content = data?.choices?.[0]?.message?.content || '';
+        if (content) {
+          yield content as string;
+        }
+      }
     },
     buildCurl(config, request) {
-      const body = {
+      const useStream = request.stream !== false;
+      const body = removeEmptyEntries({
         model: request.modelId,
         messages: [
           { role: 'system', content: request.systemPrompt },
           { role: 'user', content: request.userPrompt }
         ],
         tools: parseTools(request.toolsDefinition),
-        stream: true,
-        ...request.params
-      };
+        stream: useStream,
+        ...request.params,
+        enable_suggestions: request.enableSuggestions
+      });
 
       const apiKey = config.apiKey || options.apiKeyPlaceholder;
       const url = config.baseUrl || options.defaultUrl;
@@ -301,27 +355,68 @@ const slots = ref<Slot[]>([]);
 
 function loadProfiles() {
   const stored = localStorage.getItem(localStorageKey);
-  providerProfiles.value = stored ? (JSON.parse(stored) as ProviderProfile[]) : [];
+  const parsed = stored ? (JSON.parse(stored) as ProviderProfile[]) : [];
+  providerProfiles.value = parsed.map((profile) => {
+    const plugin = plugins.find((p) => p.id === profile.pluginId) ?? plugins[0];
+    return {
+      ...profile,
+      pluginId: plugin.id,
+      baseUrl: profile.baseUrl || plugin.defaultBaseUrl || 'https://api.openai.com/v1/chat/completions'
+    };
+  });
 }
 
 function saveProfiles() {
   localStorage.setItem(localStorageKey, JSON.stringify(providerProfiles.value));
 }
 
+function resetNewProfile() {
+  newProfile.name = '';
+  newProfile.apiKey = '';
+  newProfile.pluginId = plugins[0].id;
+  newProfile.baseUrl = plugins[0].defaultBaseUrl || 'https://api.openai.com/v1/chat/completions';
+}
+
 function addProfile() {
-  const name = prompt('Provider profile name?');
-  if (!name) return;
-  const apiKey = prompt('API Key (stored locally)') || '';
-  const baseUrl = prompt('Base URL (OpenAI compatible)') || 'https://api.openai.com/v1/chat/completions';
-  providerProfiles.value.push({ id: crypto.randomUUID(), name, apiKey, baseUrl });
+  if (!newProfile.name.trim()) {
+    alert('请填写 Provider 名称');
+    return;
+  }
+  const profile: ProviderProfile = {
+    id: crypto.randomUUID(),
+    name: newProfile.name.trim(),
+    apiKey: newProfile.apiKey.trim(),
+    baseUrl: newProfile.baseUrl.trim() || defaultProviderTemplate.value,
+    pluginId: newProfile.pluginId
+  };
+  providerProfiles.value.push(profile);
+  saveProfiles();
+  resetNewProfile();
+}
+
+function removeProfile(profileId: string) {
+  providerProfiles.value = providerProfiles.value.filter((p) => p.id !== profileId);
+  const fallbackProvider = providerProfiles.value[0] || null;
+  slots.value = slots.value.map((slot) => {
+    if (slot.providerProfileId !== profileId) return slot;
+    return {
+      ...slot,
+      providerProfileId: fallbackProvider?.id ?? null,
+      pluginId: fallbackProvider?.pluginId || slot.pluginId
+    };
+  });
   saveProfiles();
 }
 
 function createSlot(copyFrom?: Slot): Slot {
+  const defaultProvider = providerProfiles.value[0];
+  const providerProfileId = copyFrom?.providerProfileId ?? defaultProvider?.id ?? null;
+  const provider = providerProfiles.value.find((p) => p.id === providerProfileId);
+  const pluginId = provider?.pluginId ?? copyFrom?.pluginId ?? plugins[0].id;
   return {
     id: crypto.randomUUID(),
-    providerProfileId: providerProfiles.value[0]?.id ?? null,
-    pluginId: copyFrom?.pluginId ?? plugins[0].id,
+    providerProfileId,
+    pluginId,
     modelId: copyFrom?.modelId ?? 'gpt-4o-mini',
     systemPrompt:
       copyFrom?.systemPrompt ?? 'You are a helpful assistant focused on prompt debugging insights.',
@@ -346,7 +441,8 @@ const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
 async function refreshModelsForSlot(slot: Slot) {
   const plugin = getPlugin(slot);
   try {
-    const profile = getProfile(slot) ?? { id: '', name: '', apiKey: '', baseUrl: '' };
+    const profile =
+      getProfile(slot) ?? ({ id: '', name: '', apiKey: '', baseUrl: '', pluginId: plugin.id } as ProviderProfile);
     modelsByPlugin[plugin.id] = await plugin.listModels(profile);
     if (!modelsByPlugin[plugin.id].find((m) => m.id === slot.modelId)) {
       slot.modelId = modelsByPlugin[plugin.id][0]?.id || slot.modelId;
@@ -357,10 +453,12 @@ async function refreshModelsForSlot(slot: Slot) {
 }
 
 function modelOptions(slot: Slot) {
-  return modelsByPlugin[slot.pluginId] || [{ id: slot.modelId, label: slot.modelId }];
+  const pluginId = resolvePluginId(slot);
+  return modelsByPlugin[pluginId] || [{ id: slot.modelId, label: slot.modelId }];
 }
 
-function onPluginChange(slot: Slot) {
+function onProviderChange(slot: Slot) {
+  resolvePluginId(slot);
   refreshModelsForSlot(slot);
 }
 
@@ -391,8 +489,22 @@ function matchesQuery(item: HistoryItem) {
 
 const filteredHistory = computed(() => historyItems.value.filter(matchesQuery));
 
+watch(
+  filteredHistory,
+  (list) => {
+    if (!list.length) {
+      activeHistoryId.value = null;
+      return;
+    }
+    if (!activeHistoryId.value || !list.some((item) => item.id === activeHistoryId.value)) {
+      activeHistoryId.value = list[0].id;
+    }
+  },
+  { immediate: true }
+);
+
 function mergeParams(slot: Slot) {
-  return { ...shared.defaultParams, ...(slot.paramOverride || {}) };
+  return removeEmptyEntries({ ...shared.defaultParams, ...(slot.paramOverride || {}) });
 }
 
 function buildRequest(slot: Slot): PluginRequest {
@@ -401,16 +513,28 @@ function buildRequest(slot: Slot): PluginRequest {
     userPrompt: shared.userPrompt,
     toolsDefinition: shared.toolsDefinition,
     params: mergeParams(slot),
-    modelId: slot.modelId
+    modelId: slot.modelId,
+    enableSuggestions: shared.enableSuggestions,
+    stream: shared.streamOutput
   };
-}
-
-function getPlugin(slot: Slot) {
-  return plugins.find((p) => p.id === slot.pluginId)!;
 }
 
 function getProfile(slot: Slot) {
   return providerProfiles.value.find((p) => p.id === slot.providerProfileId) || null;
+}
+
+function resolvePluginId(slot: Slot) {
+  const provider = getProfile(slot);
+  const resolved = provider?.pluginId || slot.pluginId || plugins[0].id;
+  if (slot.pluginId !== resolved) {
+    slot.pluginId = resolved;
+  }
+  return resolved;
+}
+
+function getPlugin(slot: Slot) {
+  const pluginId = resolvePluginId(slot);
+  return plugins.find((p) => p.id === pluginId)!;
 }
 
 async function exportCurl(slot: Slot) {
@@ -442,7 +566,7 @@ async function runSlot(slot: Slot) {
   let firstChunkAt: number | null = null;
   try {
     for await (const chunk of plugin.invokeChat(profile, request, {
-      stream: true,
+      stream: request.stream,
       signal: controller.signal
     })) {
       if (firstChunkAt === null) {
@@ -511,11 +635,22 @@ function loadHistoryIntoEditor(item: HistoryItem) {
 }
 
 onMounted(async () => {
+  resetNewProfile();
   loadProfiles();
   slots.value = [createSlot()];
   await Promise.all(slots.value.map((slot) => refreshModelsForSlot(slot)));
   await loadHistory();
 });
+
+watch(
+  () => newProfile.pluginId,
+  () => {
+    if (!newProfile.baseUrl) {
+      newProfile.baseUrl = defaultProviderTemplate.value;
+    }
+  },
+  { immediate: true }
+);
 
 watch(
   () => slots.value.map((slot) => `${slot.id}:${slot.pluginId}:${slot.providerProfileId}`),
@@ -532,11 +667,82 @@ watch(
         <h1>PromptForge 调试台</h1>
         <p class="small">多 Slot 对比 / 插件化 / cURL 导出 / 本地持久化</p>
       </div>
-      <div class="row" style="width: 320px">
+      <div class="row" style="width: 360px">
         <button @click="addSlot()">新增 Slot</button>
-        <button class="ghost" @click="addProfile">新增 Provider</button>
+        <button class="ghost" @click="showProviderManager = true">管理 Providers</button>
       </div>
     </header>
+
+    <div v-if="showProviderManager" class="provider-panel">
+      <div class="provider-panel__content">
+        <div class="flex-between" style="margin-bottom: 12px">
+          <h3>Provider 管理</h3>
+          <button class="ghost" @click="showProviderManager = false">关闭</button>
+        </div>
+        <div class="provider-form">
+          <div class="row">
+            <div>
+              <label>名称</label>
+              <input v-model="newProfile.name" placeholder="如：OpenAI 生产环境" />
+            </div>
+            <div>
+              <label>插件</label>
+              <select v-model="newProfile.pluginId">
+                <option v-for="plugin in plugins" :key="plugin.id" :value="plugin.id">{{ plugin.name }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Base URL</label>
+              <input
+                v-model="newProfile.baseUrl"
+                :placeholder="defaultProviderTemplate"
+                title="未填写则使用插件默认值"
+              />
+              <p class="small">未填写将使用对应插件的默认值</p>
+            </div>
+            <div>
+              <label>API Key</label>
+              <input v-model="newProfile.apiKey" placeholder="存储在本地" />
+            </div>
+          </div>
+          <div class="flex-between" style="margin-top: 8px">
+            <div class="small">Provider 与插件绑定，Slot 选择 Provider 即确定插件。</div>
+            <div class="row" style="width: 240px">
+              <button class="ghost" @click="resetNewProfile">重置</button>
+              <button @click="addProfile">添加 Provider</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th>插件</th>
+                <th>Base URL</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!providerProfiles.length">
+                <td colspan="4">暂无 Provider，请先添加。</td>
+              </tr>
+              <tr v-for="profile in providerProfiles" :key="profile.id">
+                <td>{{ profile.name }}</td>
+                <td>{{ plugins.find((p) => p.id === profile.pluginId)?.name || '未知插件' }}</td>
+                <td>{{ profile.baseUrl }}</td>
+                <td>
+                  <button class="ghost" @click="removeProfile(profile.id)">删除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <section>
       <div class="flex-between">
@@ -544,11 +750,11 @@ watch(
           <button class="secondary" @click="runSelected">Run Selected</button>
           <button class="ghost" @click="runAll">Run All</button>
           <button class="ghost" @click="toggleSelectAll(true)">全选</button>
-          <button class="ghost" @click="toggleSelectAll(false)">取消全选</button>
-        </div>
-        <button class="ghost" @click="showHistory = !showHistory">
-          {{ showHistory ? '隐藏历史' : '打开历史' }}
-        </button>
+        <button class="ghost" @click="toggleSelectAll(false)">取消全选</button>
+      </div>
+      <button class="ghost" @click="showHistory = !showHistory">
+        {{ showHistory ? '隐藏历史' : '打开历史' }}
+      </button>
       </div>
     </section>
 
@@ -599,6 +805,17 @@ watch(
           </div>
         </div>
       </div>
+      <div class="row" style="align-items: center; justify-content: flex-start">
+        <label class="row" style="flex: 0 1 auto; gap: 6px">
+          <input type="checkbox" v-model="shared.enableSuggestions" />
+          启用联想
+        </label>
+        <label class="row" style="flex: 0 1 auto; gap: 6px">
+          <input type="checkbox" v-model="shared.streamOutput" />
+          启用流式输出
+        </label>
+      </div>
+      <div class="small">关闭流式输出时，将在完整响应返回后一次性展示内容，cURL 也会同步更新。</div>
     </section>
 
     <section>
@@ -621,19 +838,16 @@ watch(
           <div class="row">
             <div>
               <label>Provider</label>
-              <select v-model="slot.providerProfileId">
+              <select v-model="slot.providerProfileId" @change="onProviderChange(slot)">
+                <option :value="null">未选择</option>
                 <option v-for="profile in providerProfiles" :key="profile.id" :value="profile.id">
                   {{ profile.name }}
                 </option>
               </select>
             </div>
             <div>
-              <label>Plugin</label>
-              <select v-model="slot.pluginId" @change="onPluginChange(slot)">
-                <option v-for="plugin in plugins" :key="plugin.id" :value="plugin.id">
-                  {{ plugin.name }}
-                </option>
-              </select>
+              <label>插件</label>
+              <div class="readonly-input">{{ getPlugin(slot).name }}</div>
             </div>
             <div>
               <label>Model</label>
@@ -646,19 +860,96 @@ watch(
           </div>
           <div>
             <label>System Prompt</label>
-            <textarea v-model="slot.systemPrompt" placeholder="为该 Slot 定义 System Prompt" />
-          </div>
-          <div>
-            <label>参数覆盖（JSON，可选）</label>
             <textarea
-              :value="slot.paramOverride ? JSON.stringify(slot.paramOverride, null, 2) : ''"
-              placeholder='{"temperature":0.2}'
-              @input="(e: Event) => {
-                const value = (e.target as HTMLTextAreaElement).value;
-                slot.paramOverride = value ? JSON.parse(value) : null;
-              }"
+              class="system-prompt"
+              v-model="slot.systemPrompt"
+              placeholder="为该 Slot 定义 System Prompt"
             />
           </div>
+          <details class="collapse">
+            <summary>参数覆盖（JSON，可选）</summary>
+            <div class="param-editor">
+              <div class="param-grid">
+                <label class="param-field">
+                  <span>temperature</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    :value="slot.paramOverride?.temperature ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'temperature', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
+                  />
+                </label>
+                <label class="param-field">
+                  <span>top_p</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    :value="slot.paramOverride?.top_p ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'top_p', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
+                  />
+                </label>
+                <label class="param-field">
+                  <span>max_tokens</span>
+                  <input
+                    type="number"
+                    step="1"
+                    :value="slot.paramOverride?.max_tokens ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'max_tokens', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
+                  />
+                </label>
+                <label class="param-field">
+                  <span>stop</span>
+                  <input
+                    type="text"
+                    :value="(slot.paramOverride?.stop as string | undefined) ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'stop', (e.target as HTMLInputElement).value)"
+                  />
+                </label>
+                <label class="param-field">
+                  <span>presence_penalty</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    :value="slot.paramOverride?.presence_penalty ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'presence_penalty', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
+                  />
+                </label>
+                <label class="param-field">
+                  <span>frequency_penalty</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    :value="slot.paramOverride?.frequency_penalty ?? ''"
+                    placeholder="继承默认"
+                    @input="(e: Event) => setParamOverride(slot, 'frequency_penalty', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
+                  />
+                </label>
+              </div>
+              <label>高级 JSON（补充/覆盖其他参数）</label>
+              <textarea
+                :value="slot.paramOverride ? JSON.stringify(slot.paramOverride, null, 2) : ''"
+                placeholder='{"temperature":0.2}'
+                @input="(e: Event) => {
+                  const value = (e.target as HTMLTextAreaElement).value;
+                  if (!value.trim()) {
+                    slot.paramOverride = null;
+                    return;
+                  }
+                  try {
+                    slot.paramOverride = JSON.parse(value);
+                  } catch (err) {
+                    alert('JSON 解析失败，请检查格式');
+                  }
+                }"
+              />
+              <div class="small">留空即沿用默认参数；上方控件与 JSON 均会合并覆盖。</div>
+            </div>
+          </details>
           <div class="row">
             <button @click="runSlot(slot)" :disabled="slot.status === 'running'">Run</button>
             <button class="ghost" @click="exportCurl(slot)">Export cURL</button>
@@ -668,53 +959,64 @@ watch(
             <span class="chip">Total: {{ slot.metrics.totalMs ? `${slot.metrics.totalMs.toFixed(0)} ms` : '-' }}</span>
           </div>
           <div>
-            <label>输出 (流式)</label>
+            <label>输出 ({{ shared.streamOutput ? '流式' : '非流式' }})</label>
             <div class="output-box">{{ slot.output || '等待运行...' }}</div>
           </div>
         </div>
       </div>
     </section>
 
-    <section v-if="showHistory">
-      <div class="flex-between">
-        <h3>历史记录</h3>
-        <input
-          style="max-width: 240px"
-          v-model="historyQuery"
-          placeholder="搜索 system/user prompt"
-        />
-      </div>
-      <div class="history-list">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>标题</th>
-              <th>耗时</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in filteredHistory" :key="item.id">
-              <td>{{ new Date(item.createdAt).toLocaleString() }}</td>
-              <td>
-                <div>{{ item.title }}</div>
-                <div class="small">{{ item.requestSnapshot.modelId }}</div>
-              </td>
-              <td>
+    <div v-if="showHistory" class="history-drawer">
+      <div class="history-mask" @click="showHistory = false"></div>
+      <section class="history-drawer__content">
+        <div class="flex-between">
+          <div>
+            <h3 style="margin: 0">历史记录</h3>
+            <p class="small">抽屉宽度占屏幕一半，方便快速浏览</p>
+          </div>
+          <div class="row" style="width: 320px">
+            <input v-model="historyQuery" placeholder="搜索 system/user prompt" />
+            <button class="ghost" @click="showHistory = false">关闭</button>
+          </div>
+        </div>
+
+        <div class="history-collapse-list">
+          <details
+            v-for="item in filteredHistory"
+            :key="item.id"
+            class="collapse history-collapse"
+            :open="activeHistoryId === item.id"
+          >
+            <summary
+              class="history-collapse__summary"
+              @click.prevent="activeHistoryId = item.id"
+            >
+              <div class="history-meta">
+                <div class="history-meta__title">{{ item.title }}</div>
+                <div class="history-meta__info">
+                  <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
+                  <span>模型：{{ item.requestSnapshot.modelId }}</span>
+                  <span>温度：{{ item.requestSnapshot.params?.temperature ?? '默认' }}</span>
+                </div>
+              </div>
+            </summary>
+            <div class="history-collapse__body">
+              <div class="row" style="flex-wrap: wrap; gap: 6px; align-items: center">
                 <span class="chip">TTFB {{ item.responseSnapshot.metrics.ttfbMs?.toFixed(0) ?? '-' }} ms</span>
                 <span class="chip">Total {{ item.responseSnapshot.metrics.totalMs?.toFixed(0) ?? '-' }} ms</span>
-              </td>
-              <td class="row">
-                <button class="ghost" @click="loadHistoryIntoEditor(item)">载入</button>
-                <button class="ghost" @click="toggleStar(item.id)">
+                <button class="ghost" style="flex: 0 0 auto" @click="loadHistoryIntoEditor(item)">
+                  载入
+                </button>
+                <button class="ghost" style="flex: 0 0 auto" @click="toggleStar(item.id)">
                   {{ item.star ? 'Unstar' : 'Star' }}
                 </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+              </div>
+              <div class="small" style="margin-top: 8px">{{ item.requestSnapshot.userPrompt }}</div>
+              <div class="output-box" style="margin-top: 8px">{{ item.responseSnapshot.outputText }}</div>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
