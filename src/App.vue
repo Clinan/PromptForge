@@ -38,6 +38,8 @@ const paramApplyMode = ref<'all' | 'new'>('all');
 const showParamDiffOnly = ref(false);
 const slotViewMode = ref<'side-by-side' | 'diff' | 'score'>('side-by-side');
 const diffSelection = ref<string[]>([]);
+const themeStorageKey = 'truestprompt-theme';
+const theme = ref<'light' | 'dark'>('light');
 
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
@@ -55,6 +57,27 @@ const historyLoadOptions = reactive({
   output: true,
   metrics: true
 });
+
+function applyTheme(mode: 'light' | 'dark') {
+  document.documentElement.setAttribute('data-theme', mode);
+  try {
+    localStorage.setItem(themeStorageKey, mode);
+  } catch (err) {
+    console.warn('无法保存主题偏好：', err);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  const storedTheme = localStorage.getItem(themeStorageKey) as 'light' | 'dark' | null;
+  theme.value = storedTheme === 'dark' ? 'dark' : 'light';
+  applyTheme(theme.value);
+}
+
+watch(theme, (mode) => applyTheme(mode));
+
+function toggleTheme() {
+  theme.value = theme.value === 'light' ? 'dark' : 'light';
+}
 
 const initialUserPrompt: UserPromptPreset = {
   id: newId(),
@@ -709,7 +732,9 @@ watch(
       v-model:selected-project="selectedProjectId"
       :providers-count="providerProfiles.length"
       :sidebar-collapsed="sidebarCollapsed"
+      :theme="theme"
       @toggleSidebar="sidebarCollapsed = !sidebarCollapsed"
+      @toggleTheme="toggleTheme"
       @openProviders="showProviderManager = true"
     />
 
