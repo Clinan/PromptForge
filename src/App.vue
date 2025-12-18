@@ -13,25 +13,31 @@ import type {
 import { plugins } from './lib/plugins';
 import { newId } from './lib/id';
 import { buildProvidersExportZip, downloadBlob, parseProvidersImportZip } from './lib/providerTransfer';
-import FloatingActionPanel from './components/FloatingActionPanel.vue';
 import ProviderPanel from './components/ProviderPanel.vue';
-import SharedPanel from './components/SharedPanel.vue';
 import AppHeader from './components/AppHeader.vue';
 import SlotsSection from './components/SlotsSection.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import CodeDialog from './components/CodeDialog.vue';
 import HistoryLoadDialog from './components/HistoryLoadDialog.vue';
+import PromptComposer from './components/PromptComposer.vue';
+import ContextPanel from './components/ContextPanel.vue';
 
-const localStorageKey = 'promptforge-profiles';
-const editorStorageKey = 'promptforge-editor-state-v1';
-const historyStore = localforage.createInstance({ name: 'promptforge-history' });
-const modelCacheStore = localforage.createInstance({ name: 'promptforge-model-cache' });
+const localStorageKey = 'truestprompt-profiles';
+const editorStorageKey = 'truestprompt-editor-state-v1';
+const historyStore = localforage.createInstance({ name: 'truestprompt-history' });
+const modelCacheStore = localforage.createInstance({ name: 'truestprompt-model-cache' });
 const modelCacheTtlMs = 24 * 60 * 60 * 1000;
 
 const providerProfiles = ref<ProviderProfile[]>([]);
 const historyItems = ref<HistoryItem[]>([]);
 const showHistory = ref(false);
 const showProviderManager = ref(false);
+const sidebarCollapsed = ref(false);
+const contextPanelTab = ref<'parameters' | 'tools' | 'variables'>('parameters');
+const paramApplyMode = ref<'all' | 'new'>('all');
+const showParamDiffOnly = ref(false);
+const slotViewMode = ref<'side-by-side' | 'diff' | 'score'>('side-by-side');
+const diffSelection = ref<string[]>([]);
 
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
@@ -52,6 +58,7 @@ const historyLoadOptions = reactive({
 
 const initialUserPrompt: UserPromptPreset = {
   id: newId(),
+  role: 'user',
   text: 'hello'
 };
 
@@ -70,6 +77,19 @@ const shared = reactive<SharedState>({
   streamOutput: true
 });
 
+const projectOptions = [
+  { id: 'core-playground', label: 'Core Playground' },
+  { id: 'evaluation-lab', label: 'Evaluation Lab' },
+  { id: 'creative-suite', label: 'Creative Suite' }
+];
+const selectedProjectId = ref(projectOptions[0].id);
+const templatePresets = [
+  'Q&A Booster',
+  'Product Copywriter',
+  'System Debugger',
+  'SQL Synthesizer'
+];
+
 type PersistedEditorState = {
   version: 2;
   shared: SharedState;
@@ -80,7 +100,7 @@ function serializeEditorState(): PersistedEditorState {
   return {
     version: 2,
     shared: {
-      userPrompts: shared.userPrompts.map((p) => ({ id: p.id, text: p.text })),
+      userPrompts: shared.userPrompts.map((p) => ({ id: p.id, role: p.role, text: p.text })),
       toolsDefinition: shared.toolsDefinition,
       defaultParams: { ...shared.defaultParams },
       enableSuggestions: shared.enableSuggestions,
@@ -109,6 +129,7 @@ function loadEditorState() {
           .filter((p): p is UserPromptPreset => Boolean(p && typeof (p as UserPromptPreset).id === 'string'))
           .map((p) => ({
             id: p.id,
+            role: p.role === 'system' || p.role === 'assistant' ? p.role : 'user',
             text: typeof p.text === 'string' ? p.text : ''
           }))
       : [];
@@ -214,7 +235,7 @@ async function exportProvidersEncryptedZip() {
   }
   try {
     const blob = await buildProvidersExportZip(providerProfiles.value, password);
-    downloadBlob(blob, 'promptforge-providers.zip');
+    downloadBlob(blob, 'truestprompt-providers.zip');
   } catch (err) {
     console.error(err);
     alert(`导出失败：${err instanceof Error ? err.message : '未知错误'}`);
@@ -303,6 +324,19 @@ function removeSlot(slotId: string) {
 }
 
 const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
+const recentHistory = computed(() => historyItems.value.slice(0, 5));
+
+function toggleDiffSelection(slotId: string) {
+  if (diffSelection.value.includes(slotId)) {
+    diffSelection.value = diffSelection.value.filter((id) => id !== slotId);
+    return;
+  }
+  if (diffSelection.value.length >= 2) {
+    diffSelection.value = [...diffSelection.value.slice(1), slotId];
+  } else {
+    diffSelection.value = [...diffSelection.value, slotId];
+  }
+}
 
 async function refreshModelsForSlot(slot: Slot) {
   await refreshModelsForSlotWithOptions(slot, {});
@@ -373,11 +407,10 @@ async function forceRefreshModels(slot: Slot) {
   }
   await refreshModelsForSlotWithOptions(slot, { force: true });
 }
-
-	async function loadHistory() {
-	  const items: HistoryItem[] = (await historyStore.getItem('items')) || [];
-	  historyItems.value = items.sort((a, b) => b.createdAt - a.createdAt);
-	}
+async function loadHistory() {
+  const items: HistoryItem[] = (await historyStore.getItem('items')) || [];
+  historyItems.value = items.sort((a, b) => b.createdAt - a.createdAt);
+}
 
 async function persistHistory(items: HistoryItem[]) {
   // Vue 的 reactive/ref 可能包含 Proxy，IndexedDB（localforage）无法结构化克隆，会触发 DataCloneError
@@ -390,14 +423,22 @@ function mergeParams(slot: Slot) {
 }
 
 function buildRequest(slot: Slot): PluginRequest {
+  const composerMessages = shared.userPrompts
+    .map((message) => ({
+      role: message.role || 'user',
+      content: message.text
+    }))
+    .filter((msg) => msg.content.trim().length > 0);
+  const userOnlyPrompts = composerMessages.filter((msg) => msg.role !== 'system').map((msg) => msg.content);
   return {
     systemPrompt: slot.systemPrompt,
-    userPrompts: shared.userPrompts.map((p) => p.text).filter((t) => t.trim().length > 0),
+    userPrompts: userOnlyPrompts,
     toolsDefinition: shared.toolsDefinition,
     params: mergeParams(slot),
     modelId: slot.modelId,
     enableSuggestions: shared.enableSuggestions,
-    stream: shared.streamOutput
+    stream: shared.streamOutput,
+    messages: composerMessages
   };
 }
 
@@ -520,9 +561,19 @@ function applyHistoryLoad() {
     : legacyUserPrompt
       ? [legacyUserPrompt]
       : [];
+  const historyMessages =
+    Array.isArray(item.requestSnapshot.messages) && item.requestSnapshot.messages.length
+      ? item.requestSnapshot.messages
+      : userPrompts.map((text) => ({ role: 'user', content: text }));
 
   if (historyLoadOptions.userPrompts) {
-    shared.userPrompts = userPrompts.length ? userPrompts.map((text) => ({ id: newId(), text })) : [{ id: newId(), text: '' }];
+    shared.userPrompts = historyMessages.length
+      ? historyMessages.map((msg) => ({
+          id: newId(),
+          role: msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user',
+          text: typeof msg.content === 'string' ? msg.content : ''
+        }))
+      : [{ id: newId(), role: 'user', text: '' }];
   }
 
   if (historyLoadOptions.tools) {
@@ -627,6 +678,23 @@ watch(
 );
 
 watch(
+  () => slotViewMode.value,
+  (mode) => {
+    if (mode !== 'diff') {
+      diffSelection.value = [];
+    }
+  }
+);
+
+watch(
+  () => slots.value.map((slot) => slot.id),
+  () => {
+    const allowed = new Set(slots.value.map((slot) => slot.id));
+    diffSelection.value = diffSelection.value.filter((id) => allowed.has(id));
+  }
+);
+
+watch(
   () => slots.value.map((slot) => `${slot.id}:${slot.pluginId}:${slot.providerProfileId}`),
   () => {
     slots.value.forEach((slot) => refreshModelsForSlot(slot));
@@ -635,67 +703,167 @@ watch(
 </script>
 
 <template>
-  <div>
-    <AppHeader @openProviders="showProviderManager = true" />
+  <div class="app-shell">
+    <AppHeader
+      :project-options="projectOptions"
+      v-model:selected-project="selectedProjectId"
+      :providers-count="providerProfiles.length"
+      :sidebar-collapsed="sidebarCollapsed"
+      @toggleSidebar="sidebarCollapsed = !sidebarCollapsed"
+      @openProviders="showProviderManager = true"
+    />
 
-			    <ProviderPanel
-			      v-if="showProviderManager"
-			      :plugins="plugins"
-		      :providerProfiles="providerProfiles"
-		      :newProfile="newProfile"
-		      :defaultProviderTemplate="defaultProviderTemplate"
-		      :onResetNewProfile="resetNewProfile"
-		      :onAddProfile="addProfile"
-		      :onRemoveProfile="removeProfile"
-		      :onExportProviders="exportProvidersEncryptedZip"
-		      :onImportProviders="importProvidersEncryptedZip"
-		      @close="showProviderManager = false"
-			    />
-		
-			    <SharedPanel :shared="shared" />
+    <div class="workspace">
+      <aside class="workspace-sidebar" :class="{ 'is-collapsed': sidebarCollapsed }">
+        <div class="sidebar-section">
+          <div class="sidebar-section__title">Projects</div>
+          <div class="sidebar-list">
+            <button
+              v-for="project in projectOptions"
+              :key="project.id"
+              class="sidebar-item"
+              :class="{ active: selectedProjectId === project.id }"
+              @click="selectedProjectId = project.id"
+            >
+              <span class="sidebar-item__name">{{ project.label }}</span>
+              <span class="sidebar-item__badge">Live</span>
+            </button>
+          </div>
+        </div>
 
-			    <SlotsSection
-			      :slots="slots"
-			      :providerProfiles="providerProfiles"
-			      :streamOutput="shared.streamOutput"
-			      :refreshingModelsBySlotId="refreshingModelsBySlotId"
-			      :modelOptions="modelOptions"
-			      @copy="addSlot"
-			      @remove="removeSlot"
-			      @run="runSlot"
-			      @export-curl="exportCurl"
-			      @provider-change="onProviderChange"
-			      @refresh-models="forceRefreshModels"
-			    />
+        <div class="sidebar-section">
+          <div class="sidebar-section__title">
+            Runs History
+            <button class="text-button" @click="showHistory = true">全部</button>
+          </div>
+          <div class="runs-list">
+            <button
+              v-for="run in recentHistory"
+              :key="run.id"
+              class="run-entry"
+              @click="loadHistoryIntoEditor(run)"
+            >
+              <div class="run-entry__title">{{ run.title }}</div>
+              <div class="run-entry__meta">
+                <span>{{ new Date(run.createdAt).toLocaleTimeString() }}</span>
+                <span>{{ run.requestSnapshot.modelId }}</span>
+              </div>
+            </button>
+            <div v-if="!recentHistory.length" class="sidebar-empty">暂无运行记录</div>
+          </div>
+        </div>
 
-			    <FloatingActionPanel
-			      :showHistory="showHistory"
-			      @runSelected="runSelected"
-			      @runAll="runAll"
-			      @toggleHistory="showHistory = !showHistory"
-			    />
-	
-		    <HistoryDrawer
-		      v-if="showHistory"
-		      :items="historyItems"
-		      @close="showHistory = false"
-		      @load="loadHistoryIntoEditor"
-		      @toggle-star="toggleStar"
-		    />
+        <div class="sidebar-section">
+          <div class="sidebar-section__title">Templates</div>
+          <div class="sidebar-list sidebar-list--ghost">
+            <button v-for="template in templatePresets" :key="template" class="sidebar-item ghost">
+              <span class="sidebar-item__name">{{ template }}</span>
+              <span class="sidebar-item__badge muted">Preset</span>
+            </button>
+          </div>
+        </div>
 
-		    <HistoryLoadDialog
-		      :open="historyLoadOpen"
-		      :item="historyLoadItem"
-		      :options="historyLoadOptions"
-		      @close="historyLoadOpen = false"
-		      @confirm="applyHistoryLoad"
-		    />
+        <div class="sidebar-section">
+          <div class="sidebar-section__title">
+            Providers
+            <button class="text-button" @click="showProviderManager = true">管理</button>
+          </div>
+          <div class="providers-list">
+            <div v-if="!providerProfiles.length" class="sidebar-empty">暂无 Provider</div>
+            <button
+              v-for="profile in providerProfiles"
+              :key="profile.id"
+              class="provider-chip"
+              @click="showProviderManager = true"
+            >
+              <span class="dot dot--success"></span>
+              <div class="provider-chip__info">
+                <div class="provider-chip__name">{{ profile.name }}</div>
+                <div class="provider-chip__meta">{{ plugins.find((p) => p.id === profile.pluginId)?.name }}</div>
+              </div>
+            </button>
+          </div>
+        </div>
 
-		    <CodeDialog
-		      :open="codeDialogOpen"
-		      :title="codeDialogTitle"
-		      :code="codeDialogCode"
-		      @close="codeDialogOpen = false"
-		    />
-	  </div>
-	</template>
+        <button class="sidebar-collapse" @click="sidebarCollapsed = !sidebarCollapsed">
+          {{ sidebarCollapsed ? '展开面板' : '折叠侧栏' }}
+        </button>
+      </aside>
+
+      <main class="workspace-main">
+        <section class="panel composer-panel card">
+          <PromptComposer v-model:messages="shared.userPrompts" />
+        </section>
+
+        <section class="panel slots-panel card">
+          <SlotsSection
+            :slots="slots"
+            :providerProfiles="providerProfiles"
+            :streamOutput="shared.streamOutput"
+            :refreshingModelsBySlotId="refreshingModelsBySlotId"
+            :modelOptions="modelOptions"
+            :defaultParams="shared.defaultParams"
+            :viewMode="slotViewMode"
+            :diffSelection="diffSelection"
+            :showParamDiffOnly="showParamDiffOnly"
+            @copy="addSlot"
+            @remove="removeSlot"
+            @run="runSlot"
+            @export-curl="exportCurl"
+            @provider-change="onProviderChange"
+            @refresh-models="forceRefreshModels"
+            @runSelected="runSelected"
+            @runAll="runAll"
+            @changeViewMode="slotViewMode = $event"
+            @toggleDiff="toggleDiffSelection"
+          />
+        </section>
+      </main>
+
+      <ContextPanel
+        class="context-panel"
+        :shared="shared"
+        v-model:activeTab="contextPanelTab"
+        v-model:paramApplyMode="paramApplyMode"
+        v-model:showDiffOnly="showParamDiffOnly"
+      />
+    </div>
+
+    <ProviderPanel
+      v-if="showProviderManager"
+      :plugins="plugins"
+      :providerProfiles="providerProfiles"
+      :newProfile="newProfile"
+      :defaultProviderTemplate="defaultProviderTemplate"
+      :onResetNewProfile="resetNewProfile"
+      :onAddProfile="addProfile"
+      :onRemoveProfile="removeProfile"
+      :onExportProviders="exportProvidersEncryptedZip"
+      :onImportProviders="importProvidersEncryptedZip"
+      @close="showProviderManager = false"
+    />
+
+    <HistoryDrawer
+      v-if="showHistory"
+      :items="historyItems"
+      @close="showHistory = false"
+      @load="loadHistoryIntoEditor"
+      @toggle-star="toggleStar"
+    />
+
+    <HistoryLoadDialog
+      :open="historyLoadOpen"
+      :item="historyLoadItem"
+      :options="historyLoadOptions"
+      @close="historyLoadOpen = false"
+      @confirm="applyHistoryLoad"
+    />
+
+    <CodeDialog
+      :open="codeDialogOpen"
+      :title="codeDialogTitle"
+      :code="codeDialogCode"
+      @close="codeDialogOpen = false"
+    />
+  </div>
+</template>

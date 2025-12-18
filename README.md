@@ -1,5 +1,5 @@
 # 项目名称
-**PromptForge**
+**TruestPrompt**
 
 ## 1. 项目定位与目标
 
@@ -268,4 +268,3 @@
 * Provider Profile 可保存到 localStorage，并可切换使用
 * 每次 Run 生成历史记录，可 Star、可搜索、可载入
 * Slot 上可导出 curl，复制可用
-

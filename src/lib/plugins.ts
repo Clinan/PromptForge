@@ -173,10 +173,19 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
       }
 
       const useStream = opts.stream !== false && request.stream !== false;
-      const messages = [
-        { role: 'system', content: request.systemPrompt },
-        ...request.userPrompts.map((content) => ({ role: 'user', content }))
-      ];
+      const normalizedMessages = Array.isArray(request.messages)
+        ? request.messages
+            .map((msg) => ({
+              role: msg && typeof msg.role === 'string' ? msg.role : 'user',
+              content: typeof msg.content === 'string' ? msg.content : ''
+            }))
+            .filter((msg) => msg.content.trim().length > 0)
+        : null;
+      const fallbackMessages = request.userPrompts.map((content) => ({ role: 'user', content }));
+      const messages = normalizedMessages?.length ? normalizedMessages.slice() : fallbackMessages.slice();
+      if ((request.systemPrompt || '').trim()) {
+        messages.unshift({ role: 'system', content: request.systemPrompt });
+      }
       const body = {
         model: request.modelId,
         messages,

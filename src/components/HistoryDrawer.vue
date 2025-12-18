@@ -15,13 +15,23 @@ const emit = defineEmits<{
 const query = ref('');
 const activeId = ref<string | null>(null);
 
+function displayMessages(item: HistoryItem) {
+  const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt || '';
+  if (Array.isArray(item.requestSnapshot.messages) && item.requestSnapshot.messages.length) {
+    return item.requestSnapshot.messages
+      .map((msg) => `[${(msg as { role?: string }).role || 'user'}] ${(msg as { content?: string }).content || ''}`)
+      .join('\n\n');
+  }
+  if (Array.isArray(item.requestSnapshot.userPrompts) && item.requestSnapshot.userPrompts.length) {
+    return item.requestSnapshot.userPrompts.join('\n\n');
+  }
+  return legacyUserPrompt;
+}
+
 function matchesQuery(item: HistoryItem) {
   const q = query.value.toLowerCase();
   if (!q) return true;
-  const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt || '';
-  const userJoined = Array.isArray(item.requestSnapshot.userPrompts)
-    ? item.requestSnapshot.userPrompts.join('\n')
-    : legacyUserPrompt;
+  const userJoined = displayMessages(item);
   return (
     item.title.toLowerCase().includes(q) ||
     userJoined.toLowerCase().includes(q) ||
@@ -30,14 +40,6 @@ function matchesQuery(item: HistoryItem) {
 }
 
 const filtered = computed(() => props.items.filter(matchesQuery));
-
-function displayUserPrompts(item: HistoryItem) {
-  const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt || '';
-  if (Array.isArray(item.requestSnapshot.userPrompts) && item.requestSnapshot.userPrompts.length) {
-    return item.requestSnapshot.userPrompts.join('\n\n');
-  }
-  return legacyUserPrompt;
-}
 
 watch(
   filtered,
@@ -95,7 +97,7 @@ watch(
               </button>
             </div>
             <div class="small" style="margin-top: 8px; white-space: pre-wrap">
-              {{ displayUserPrompts(item) }}
+              {{ displayMessages(item) }}
             </div>
             <div class="output-box" style="margin-top: 8px">{{ item.responseSnapshot.outputText }}</div>
           </div>

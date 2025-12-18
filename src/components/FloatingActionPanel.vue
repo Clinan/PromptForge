@@ -12,7 +12,7 @@ const emit = defineEmits<{
   toggleHistory: [];
 }>();
 
-const resolvedStorageKey = props.storageKey || 'promptforge-floating-panel-pos-v1';
+const resolvedStorageKey = props.storageKey || 'truestprompt-floating-panel-pos-v1';
 const panelEl = ref<HTMLElement | null>(null);
 const pos = reactive({ left: 0, top: 0 });
 const dragging = ref(false);
@@ -153,4 +153,3 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
-

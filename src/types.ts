@@ -6,6 +6,7 @@ export type PluginRequest = {
   modelId: string;
   enableSuggestions: boolean;
   stream: boolean;
+  messages?: Array<{ role: string; content: string }>;
 };
 
 export type PluginInvokeOptions = {
@@ -74,6 +75,7 @@ export type HistoryItem = {
 
 export type UserPromptPreset = {
   id: string;
+  role: 'system' | 'user' | 'assistant';
   text: string;
 };
 
@@ -98,4 +100,3 @@ export type ProviderProfileDraft = {
   baseUrl: string;
   pluginId: string;
 };
-

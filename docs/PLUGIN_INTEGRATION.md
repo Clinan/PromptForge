@@ -1,6 +1,6 @@
 # 插件接入指南
 
-本文档说明如何在 PromptForge 前端中接入新的模型厂商插件，并给出基于阿里云 DashScope（通义模型）的示例。核心目标是让第三方开发者可以通过实现统一的插件接口，完成模型列表拉取、聊天调用、cURL 导出等功能。
+本文档说明如何在 TruestPrompt 前端中接入新的模型厂商插件，并给出基于阿里云 DashScope（通义模型）的示例。核心目标是让第三方开发者可以通过实现统一的插件接口，完成模型列表拉取、聊天调用、cURL 导出等功能。
 
 ## 统一插件接口
 
@@ -37,7 +37,7 @@
 
 ## 示例：接入阿里云 DashScope（通义模型）
 
-下面示例展示如何将阿里云 DashScope 的 OpenAI 兼容接口接入到 PromptForge。DashScope 提供 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` 兼容 OpenAI 的 Chat Completions 协议，并使用 `Authorization: Bearer <API_KEY>` 鉴权。
+下面示例展示如何将阿里云 DashScope 的 OpenAI 兼容接口接入到 TruestPrompt。DashScope 提供 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` 兼容 OpenAI 的 Chat Completions 协议，并使用 `Authorization: Bearer <API_KEY>` 鉴权。
 
 ```ts
 // 片段：添加到 src/App.vue 的 plugins 数组
@@ -164,5 +164,4 @@ plugins.push(aliyunDashScope);
 
 如果需要使用私有网关或企业代理，可在 Provider Profile 中覆盖 Base URL；插件会优先使用 Profile 中的配置。
 
-通过以上步骤，即可为 PromptForge 添加新的模型厂商插件，并保持与现有运行、历史、cURL 导出等功能一致。
-
+通过以上步骤，即可为 TruestPrompt 添加新的模型厂商插件，并保持与现有运行、历史、cURL 导出等功能一致。
