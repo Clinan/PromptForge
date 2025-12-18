@@ -6,11 +6,13 @@ const props = defineProps<{
   selectedProject: string;
   providersCount: number;
   sidebarCollapsed: boolean;
+  theme: 'light' | 'dark';
 }>();
 
 const emit = defineEmits<{
   openProviders: [];
   toggleSidebar: [];
+  toggleTheme: [];
   'update:selectedProject': [string];
 }>();
 
@@ -48,11 +50,18 @@ watch(
       <input class="top-bar__search" v-model="searchValue" placeholder="搜索 Prompt / Runs / Variables" />
     </div>
     <div class="top-bar__right">
-      <button class="status-chip ghost pill" @click="emit('openProviders')">
+      <button class="status-chip" @click="emit('openProviders')">
         <span class="dot dot--success"></span>
         {{ props.providersCount }} Providers
       </button>
       <button class="ghost pill" @click="emit('openProviders')">Providers 面板</button>
+      <button
+        class="icon-button theme-toggle"
+        :title="props.theme === 'light' ? '切换为暗色' : '切换为浅色'"
+        @click="emit('toggleTheme')"
+      >
+        {{ props.theme === 'light' ? '☀️' : '🌙' }}
+      </button>
       <div class="avatar">LC</div>
     </div>
   </header>

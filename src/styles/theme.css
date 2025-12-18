@@ -1,0 +1,78 @@
+:root {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  font-weight: 500;
+  --radius: 18px;
+  --radius-sm: 12px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --bg2: #eef2ff;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #ffffff;
+  --stroke: rgba(15, 23, 42, 0.1);
+  --stroke-strong: rgba(15, 23, 42, 0.14);
+  --text: #0b1220;
+  --text-muted: rgba(11, 18, 32, 0.62);
+  --accent: #4f8cff;
+  --accent2: #8b5cf6;
+  --accent-soft: rgba(79, 140, 255, 0.14);
+  --state-idle: rgba(11, 18, 32, 0.35);
+  --state-running: #3b82f6;
+  --state-done: #10b981;
+  --state-error: #ef4444;
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-hover: 0 16px 40px rgba(15, 23, 42, 0.1);
+  --glass-blur: blur(12px);
+  --ring: 0 0 0 4px rgba(79, 140, 255, 0.18);
+  --page-gradient: radial-gradient(circle at 8% 10%, rgba(79, 140, 255, 0.1), transparent 35%),
+    radial-gradient(circle at 92% 12%, rgba(139, 92, 246, 0.09), transparent 32%), var(--bg);
+
+  --surface: var(--card);
+  --surface-alt: rgba(255, 255, 255, 0.82);
+  --border: var(--stroke);
+  --border-strong: var(--stroke-strong);
+  --muted: var(--text-muted);
+  --primary: var(--accent);
+  --primary-strong: #3d7be8;
+  --success: var(--state-done);
+  --danger: var(--state-error);
+  --shadow-soft: var(--shadow);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #030712;
+  --bg2: #0b1224;
+  --card: rgba(13, 17, 23, 0.92);
+  --card-solid: #0f172a;
+  --stroke: rgba(148, 163, 184, 0.28);
+  --stroke-strong: rgba(148, 163, 184, 0.4);
+  --text: #e2e8f0;
+  --text-muted: rgba(148, 163, 184, 0.8);
+  --accent: #3b82f6;
+  --accent2: #a855f7;
+  --accent-soft: rgba(59, 130, 246, 0.18);
+  --state-idle: rgba(226, 232, 240, 0.48);
+  --state-running: #38bdf8;
+  --state-done: #22c55e;
+  --state-error: #f87171;
+  --shadow: 0 20px 60px rgba(2, 6, 23, 0.5);
+  --shadow-hover: 0 24px 70px rgba(2, 6, 23, 0.62);
+  --glass-blur: blur(16px);
+  --ring: 0 0 0 3px rgba(59, 130, 246, 0.4);
+  --page-gradient: radial-gradient(circle at 12% 20%, rgba(60, 90, 255, 0.2), transparent 55%) var(--bg);
+
+  --surface: var(--card);
+  --surface-alt: rgba(19, 24, 35, 0.92);
+  --border: var(--stroke);
+  --border-strong: var(--stroke-strong);
+  --muted: var(--text-muted);
+  --primary: var(--accent);
+  --primary-strong: #2563eb;
+  --success: var(--state-done);
+  --danger: var(--state-error);
+  --shadow-soft: var(--shadow);
+}
