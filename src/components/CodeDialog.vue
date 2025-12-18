@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
   open: boolean;
   title: string;
   code: string;
+  usePlaceholder: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
+  'update:usePlaceholder': [boolean];
 }>();
 
 const copied = ref(false);
 let copiedTimer: number | null = null;
+const placeholderProxy = computed({
+  get: () => props.usePlaceholder,
+  set: (val: boolean) => emit('update:usePlaceholder', val)
+});
 
 async function copy() {
   try {
@@ -55,10 +61,13 @@ watch(
             <button class="ghost" style="flex: 0 0 auto" @click="emit('close')">关闭</button>
           </div>
         </div>
+        <label class="inline-toggle">
+          <input type="checkbox" v-model="placeholderProxy" />
+          <span>API Key 使用占位符</span>
+        </label>
         <div v-if="copied" class="small" style="margin-bottom: 8px">已复制</div>
         <pre class="code-block"><code>{{ props.code }}</code></pre>
       </div>
     </div>
   </teleport>
 </template>
-

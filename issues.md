@@ -1,0 +1,3 @@
+- 【DONE】<code>{{ VARIABLE_NAME }}</code> 这个在页面上没显示出来
+- 【DONE】Add Variable 按钮太大了，去掉它，默认可以存在输入一个变量的输入框
+- 【DONE】导出 cURL 时使用 API Key 占位符 .应该放在弹窗里，切换状态，curl代码也对应切换

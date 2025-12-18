@@ -19,16 +19,20 @@ const emit = defineEmits<{
   copy: [slot: Slot];
   remove: [slotId: string];
   run: [slot: Slot];
+  stop: [slotId: string];
   exportCurl: [slot: Slot];
   providerChange: [slot: Slot];
   refreshModels: [slot: Slot];
   runSelected: [];
   runAll: [];
+  stopAll: [];
   changeViewMode: ['side-by-side' | 'diff' | 'score'];
   toggleDiff: [slotId: string];
 }>();
 
 const diffSlots = computed(() => props.slots.filter((slot) => props.diffSelection.includes(slot.id)));
+const hasRunning = computed(() => props.slots.some((slot) => slot.status === 'running'));
+const selectedCount = computed(() => props.slots.filter((slot) => slot.selected).length);
 
 const diffLines = computed(() => {
   if (diffSlots.value.length < 2) return [];
@@ -67,8 +71,11 @@ const diffLines = computed(() => {
           <button :class="{ active: props.viewMode === 'score' }" @click="emit('changeViewMode', 'score')">Score</button>
         </div>
         <div class="row gap-small">
-          <button class="ghost pill" @click="emit('runSelected')">运行已选 Slot</button>
-          <button class="pill" @click="emit('runAll')">运行全部</button>
+          <button class="ghost pill" :disabled="hasRunning || selectedCount === 0" @click="emit('runSelected')">
+            运行已选 Slot
+          </button>
+          <button class="pill" :disabled="hasRunning" @click="emit('runAll')">运行全部</button>
+          <button class="pill danger" :disabled="!hasRunning" @click="emit('stopAll')">停止全部</button>
         </div>
       </div>
     </div>
@@ -99,6 +106,7 @@ const diffLines = computed(() => {
         @copy="emit('copy', $event)"
         @remove="emit('remove', $event)"
         @run="emit('run', $event)"
+        @stop="emit('stop', $event)"
         @export-curl="emit('exportCurl', $event)"
         @provider-change="emit('providerChange', $event)"
         @refresh-models="emit('refreshModels', $event)"

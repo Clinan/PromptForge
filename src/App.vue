@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import localforage from 'localforage';
 import type {
   HistoryItem,
@@ -21,6 +21,8 @@ import CodeDialog from './components/CodeDialog.vue';
 import HistoryLoadDialog from './components/HistoryLoadDialog.vue';
 import PromptComposer from './components/PromptComposer.vue';
 import ContextPanel from './components/ContextPanel.vue';
+import ConfirmDialog from './components/ConfirmDialog.vue';
+import { NLayout, NLayoutSider } from 'naive-ui';
 
 const localStorageKey = 'truestprompt-profiles';
 const editorStorageKey = 'truestprompt-editor-state-v1';
@@ -32,18 +34,121 @@ const providerProfiles = ref<ProviderProfile[]>([]);
 const historyItems = ref<HistoryItem[]>([]);
 const showHistory = ref(false);
 const showProviderManager = ref(false);
-const sidebarCollapsed = ref(false);
 const contextPanelTab = ref<'parameters' | 'tools' | 'variables'>('parameters');
-const paramApplyMode = ref<'all' | 'new'>('all');
 const showParamDiffOnly = ref(false);
 const slotViewMode = ref<'side-by-side' | 'diff' | 'score'>('side-by-side');
 const diffSelection = ref<string[]>([]);
 const themeStorageKey = 'truestprompt-theme';
 const theme = ref<'light' | 'dark'>('light');
+const useCurlPlaceholder = ref(true);
+const leftSidebarHidden = ref(false);
+const rightPanelHidden = ref(false);
+const workspaceGapPx = 6;
+const leftSidebarWidthPx = 240;
+const rightPanelWidthPx = 360;
+const workspaceRef = ref<HTMLElement | null>(null);
+const workspaceRect = reactive<{ top: number; left: number; right: number; height: number }>({
+  top: 0,
+  left: 0,
+  right: 0,
+  height: 0
+});
+const viewportWidth = ref(0);
+
+function updateWorkspaceRect() {
+  if (typeof window === 'undefined') return;
+  viewportWidth.value = window.innerWidth;
+  const el = workspaceRef.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  workspaceRect.top = rect.top;
+  workspaceRect.left = rect.left;
+  workspaceRect.right = rect.right;
+  workspaceRect.height = rect.height;
+}
+
+const handleVerticalPosition = computed(() => {
+  if (workspaceRect.height > 0) {
+    return `${workspaceRect.top + workspaceRect.height / 2}px`;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.innerHeight / 2}px`;
+  }
+  return '50%';
+});
+
+const leftPanelToggleStyle = computed(() => {
+  const offset = (leftSidebarHidden.value ? 0 : leftSidebarWidthPx) + workspaceGapPx / 2;
+  const baseLeft = workspaceRect.left || 0;
+  return {
+    left: `${baseLeft + offset}px`,
+    top: handleVerticalPosition.value
+  };
+});
+
+const rightPanelToggleStyle = computed(() => {
+  const viewport = viewportWidth.value || (typeof window !== 'undefined' ? window.innerWidth : 0);
+  const baseRight =
+    workspaceRect.right && viewport ? Math.max(viewport - workspaceRect.right, 0) : 0;
+  const offset = (rightPanelHidden.value ? 0 : rightPanelWidthPx) + workspaceGapPx / 2;
+  return {
+    right: `${baseRight + offset}px`,
+    top: handleVerticalPosition.value
+  };
+});
+
+watch(
+  () => [leftSidebarHidden.value, rightPanelHidden.value],
+  () => {
+    nextTick(() => updateWorkspaceRect());
+  }
+);
+
+watch(
+  workspaceRef,
+  (el) => {
+    if (!el) return;
+    nextTick(() => updateWorkspaceRect());
+  },
+  { immediate: true }
+);
 
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
 const codeDialogCode = ref('');
+
+const confirmDialogOpen = ref(false);
+const confirmDialogTitle = ref('');
+const confirmDialogDescription = ref('');
+const confirmDialogTone = ref<'default' | 'danger'>('default');
+const confirmDialogConfirmText = ref('确定');
+let confirmDialogAction: null | (() => void | Promise<void>) = null;
+
+function openConfirmDialog(options: {
+  title: string;
+  description?: string;
+  tone?: 'default' | 'danger';
+  confirmText?: string;
+  action: () => void | Promise<void>;
+}) {
+  confirmDialogTitle.value = options.title;
+  confirmDialogDescription.value = options.description || '';
+  confirmDialogTone.value = options.tone || 'default';
+  confirmDialogConfirmText.value = options.confirmText || '确定';
+  confirmDialogAction = options.action;
+  confirmDialogOpen.value = true;
+}
+
+function closeConfirmDialog() {
+  confirmDialogOpen.value = false;
+  confirmDialogAction = null;
+}
+
+async function confirmDialogConfirm() {
+  const action = confirmDialogAction;
+  closeConfirmDialog();
+  await action?.();
+}
 
 const historyLoadOpen = ref(false);
 const historyLoadItem = ref<HistoryItem | null>(null);
@@ -68,7 +173,12 @@ function applyTheme(mode: 'light' | 'dark') {
 }
 
 if (typeof window !== 'undefined') {
-  const storedTheme = localStorage.getItem(themeStorageKey) as 'light' | 'dark' | null;
+  let storedTheme: 'light' | 'dark' | null = null;
+  try {
+    storedTheme = localStorage.getItem(themeStorageKey) as 'light' | 'dark' | null;
+  } catch (err) {
+    console.warn('无法读取主题偏好（localStorage 不可用）。', err);
+  }
   theme.value = storedTheme === 'dark' ? 'dark' : 'light';
   applyTheme(theme.value);
 }
@@ -88,10 +198,11 @@ const initialUserPrompt: UserPromptPreset = {
 const shared = reactive<SharedState>({
   userPrompts: [initialUserPrompt],
   toolsDefinition: '[{"name":"fetchDocs","description":"Query project docs"}]',
+  variables: [{ id: newId(), key: '', value: '' }],
   defaultParams: {
     temperature: 0.7,
     top_p: 1,
-    max_tokens: 256,
+    max_tokens: 8192,
     stop: '',
     presence_penalty: 0,
     frequency_penalty: 0
@@ -106,25 +217,19 @@ const projectOptions = [
   { id: 'creative-suite', label: 'Creative Suite' }
 ];
 const selectedProjectId = ref(projectOptions[0].id);
-const templatePresets = [
-  'Q&A Booster',
-  'Product Copywriter',
-  'System Debugger',
-  'SQL Synthesizer'
-];
-
 type PersistedEditorState = {
-  version: 2;
+  version: 3;
   shared: SharedState;
   slots: Array<Pick<Slot, 'id' | 'providerProfileId' | 'pluginId' | 'modelId' | 'systemPrompt' | 'paramOverride'>>;
 };
 
 function serializeEditorState(): PersistedEditorState {
   return {
-    version: 2,
+    version: 3,
     shared: {
       userPrompts: shared.userPrompts.map((p) => ({ id: p.id, role: p.role, text: p.text })),
       toolsDefinition: shared.toolsDefinition,
+      variables: shared.variables.map((v) => ({ id: v.id, key: v.key, value: v.value })),
       defaultParams: { ...shared.defaultParams },
       enableSuggestions: shared.enableSuggestions,
       streamOutput: shared.streamOutput
@@ -141,11 +246,17 @@ function serializeEditorState(): PersistedEditorState {
 }
 
 function loadEditorState() {
-  const raw = localStorage.getItem(editorStorageKey);
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(editorStorageKey);
+  } catch (err) {
+    console.warn('无法读取本地编辑器状态（localStorage 不可用）。', err);
+    return;
+  }
   if (!raw) return;
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedEditorState>;
-    if (![1, 2].includes((parsed as PersistedEditorState).version) || !parsed.shared) return;
+    if (![1, 2, 3].includes((parsed as PersistedEditorState).version) || !parsed.shared) return;
 
     const restoredUserPrompts = Array.isArray(parsed.shared.userPrompts)
       ? parsed.shared.userPrompts
@@ -160,6 +271,18 @@ function loadEditorState() {
     shared.userPrompts = restoredUserPrompts.length ? restoredUserPrompts : [initialUserPrompt];
 
     if (typeof parsed.shared.toolsDefinition === 'string') shared.toolsDefinition = parsed.shared.toolsDefinition;
+    if (Array.isArray((parsed.shared as Partial<SharedState>).variables)) {
+      const restoredVariables = (parsed.shared as Partial<SharedState>).variables!
+        .filter((v) => v && typeof v.id === 'string')
+        .map((v, index) => ({
+          id: v.id,
+          key: typeof v.key === 'string' ? v.key : `VAR_${index + 1}`,
+          value: typeof v.value === 'string' ? v.value : ''
+        }));
+      if (restoredVariables.length) {
+        shared.variables = restoredVariables;
+      }
+    }
     if (parsed.shared.defaultParams) {
       shared.defaultParams = {
         temperature: Number(parsed.shared.defaultParams.temperature ?? shared.defaultParams.temperature),
@@ -226,9 +349,35 @@ function removeEmptyEntries(obj: Record<string, unknown>) {
 }
 
 const slots = ref<Slot[]>([]);
+const abortControllersBySlotId = new Map<string, AbortController>();
+
+const hasRunningSlots = computed(() => slots.value.some((slot) => slot.status === 'running'));
+
+function stopSlot(slotId: string) {
+  abortControllersBySlotId.get(slotId)?.abort();
+}
+
+function stopAllSlots() {
+  Array.from(abortControllersBySlotId.values()).forEach((controller) => controller.abort());
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  const wantsStop = (event.ctrlKey || event.metaKey) && (event.key === '.' || event.code === 'Period');
+  if (!wantsStop) return;
+  if (!hasRunningSlots.value) return;
+  event.preventDefault();
+  stopAllSlots();
+}
 
 function loadProfiles() {
-  const stored = localStorage.getItem(localStorageKey);
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(localStorageKey);
+  } catch (err) {
+    console.warn('无法读取 Provider 配置（localStorage 不可用）。', err);
+    providerProfiles.value = [];
+    return;
+  }
   const parsed = stored ? (JSON.parse(stored) as ProviderProfile[]) : [];
   providerProfiles.value = parsed.map((profile) => {
     const plugin = plugins.find((p) => p.id === profile.pluginId) ?? plugins[0];
@@ -241,7 +390,12 @@ function loadProfiles() {
 }
 
 function saveProfiles() {
-  localStorage.setItem(localStorageKey, JSON.stringify(providerProfiles.value));
+  try {
+    localStorage.setItem(localStorageKey, JSON.stringify(providerProfiles.value));
+  } catch (err) {
+    console.warn('保存 Provider 配置失败（localStorage 不可用）。', err);
+    alert('保存 Provider 配置失败：浏览器禁用了本地存储。');
+  }
 }
 
 async function exportProvidersEncryptedZip() {
@@ -278,6 +432,16 @@ async function importProvidersEncryptedZip(file: File) {
     console.error(err);
     alert(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
   }
+}
+
+function requestImportProvidersEncryptedZip(file: File) {
+  openConfirmDialog({
+    title: '导入 Provider 配置？',
+    description: '导入会覆盖本地 Provider 列表（包括已保存的 API Key）。请确认你信任该文件来源。',
+    tone: 'danger',
+    confirmText: '继续导入',
+    action: () => importProvidersEncryptedZip(file)
+  });
 }
 
 function resetNewProfile() {
@@ -318,6 +482,38 @@ function removeProfile(profileId: string) {
   saveProfiles();
 }
 
+function requestRemoveProfile(profileId: string) {
+  const profile = providerProfiles.value.find((p) => p.id === profileId);
+  openConfirmDialog({
+    title: '删除 Provider？',
+    description: profile
+      ? `将删除「${profile.name}」，并把引用它的 Slot 自动切换到第一个可用 Provider。`
+      : '将删除该 Provider，并把引用它的 Slot 自动切换到第一个可用 Provider。',
+    tone: 'danger',
+    confirmText: '删除',
+    action: () => removeProfile(profileId)
+  });
+}
+
+function clearProviderApiKeys() {
+  providerProfiles.value = providerProfiles.value.map((profile) => ({ ...profile, apiKey: '' }));
+  saveProfiles();
+}
+
+function requestClearProviderApiKeys() {
+  if (!providerProfiles.value.some((profile) => profile.apiKey.trim().length > 0)) {
+    alert('当前没有已保存的 API Key。');
+    return;
+  }
+  openConfirmDialog({
+    title: '清空所有 Provider API Key？',
+    description: '此操作会将本地保存的所有 API Key 置空（不会删除 Provider 条目）。',
+    tone: 'danger',
+    confirmText: '清空',
+    action: clearProviderApiKeys
+  });
+}
+
 function createSlot(copyFrom?: Slot): Slot {
   const defaultProvider = providerProfiles.value[0];
   const providerProfileId = copyFrom?.providerProfileId ?? defaultProvider?.id ?? null;
@@ -334,6 +530,7 @@ function createSlot(copyFrom?: Slot): Slot {
     selected: true,
     status: 'idle',
     output: '',
+    toolCalls: null,
     metrics: { ttfbMs: null, totalMs: null }
   };
 }
@@ -344,6 +541,18 @@ function addSlot(copyFrom?: Slot) {
 
 function removeSlot(slotId: string) {
   slots.value = slots.value.filter((s) => s.id !== slotId);
+}
+
+function requestRemoveSlot(slotId: string) {
+  if (slots.value.length <= 1) return;
+  const slot = slots.value.find((s) => s.id === slotId);
+  openConfirmDialog({
+    title: '删除 Slot？',
+    description: slot ? `将删除「${slot.modelId || '未选择模型'}」的 Slot，相关输出也会一并移除。` : '将删除该 Slot，相关输出也会一并移除。',
+    tone: 'danger',
+    confirmText: '删除',
+    action: () => removeSlot(slotId)
+  });
 }
 
 const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
@@ -435,26 +644,50 @@ async function loadHistory() {
   historyItems.value = items.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function persistHistory(items: HistoryItem[]) {
+let historyPersistQueue: Promise<void> = Promise.resolve();
+
+function queuePersistHistory(items: HistoryItem[]) {
   // Vue 的 reactive/ref 可能包含 Proxy，IndexedDB（localforage）无法结构化克隆，会触发 DataCloneError
   const plain = JSON.parse(JSON.stringify(items)) as HistoryItem[];
-  await historyStore.setItem('items', plain);
+  historyPersistQueue = historyPersistQueue
+    .then(() => historyStore.setItem('items', plain))
+    .catch((err) => console.warn('保存历史失败。', err));
+  return historyPersistQueue;
 }
 
 function mergeParams(slot: Slot) {
   return removeEmptyEntries({ ...shared.defaultParams, ...(slot.paramOverride || {}) });
 }
 
+function buildVariableMap() {
+  const map: Record<string, string> = {};
+  shared.variables
+    .map((item) => ({ key: item.key.trim(), value: item.value }))
+    .filter((item) => item.key.length > 0)
+    .forEach((item) => {
+      map[item.key] = item.value;
+    });
+  return map;
+}
+
+function renderTemplate(source: string, variables: Record<string, string>) {
+  if (!source) return '';
+  return source.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(variables, key) ? variables[key]! : match
+  );
+}
+
 function buildRequest(slot: Slot): PluginRequest {
+  const variables = buildVariableMap();
   const composerMessages = shared.userPrompts
     .map((message) => ({
       role: message.role || 'user',
-      content: message.text
+      content: renderTemplate(message.text, variables)
     }))
     .filter((msg) => msg.content.trim().length > 0);
   const userOnlyPrompts = composerMessages.filter((msg) => msg.role !== 'system').map((msg) => msg.content);
   return {
-    systemPrompt: slot.systemPrompt,
+    systemPrompt: renderTemplate(slot.systemPrompt, variables),
     userPrompts: userOnlyPrompts,
     toolsDefinition: shared.toolsDefinition,
     params: mergeParams(slot),
@@ -491,7 +724,8 @@ async function exportCurl(slot: Slot) {
     return;
   }
   const request = buildRequest(slot);
-  const curl = plugin.buildCurl(profile, request);
+  const maskedProfile = useCurlPlaceholder.value ? { ...profile, apiKey: '' } : profile;
+  const curl = plugin.buildCurl(maskedProfile, request);
   codeDialogTitle.value = `cURL（${slot.modelId}）`;
   codeDialogCode.value = curl;
   codeDialogOpen.value = true;
@@ -506,11 +740,14 @@ async function runSlot(slot: Slot) {
   }
   const request = buildRequest(slot);
   const controller = new AbortController();
+  abortControllersBySlotId.set(slot.id, controller);
   slot.status = 'running';
   slot.output = '';
+  slot.toolCalls = null;
   slot.metrics = { ttfbMs: null, totalMs: null };
   const start = performance.now();
   let firstChunkAt: number | null = null;
+  let canceled = false;
   try {
     for await (const chunk of plugin.invokeChat(profile, request, {
       stream: request.stream,
@@ -520,50 +757,69 @@ async function runSlot(slot: Slot) {
         firstChunkAt = performance.now();
         slot.metrics.ttfbMs = firstChunkAt - start;
       }
-      slot.output += chunk;
+      if (chunk.type === 'content') {
+        slot.output += chunk.text;
+      } else if (chunk.type === 'tool_calls') {
+        slot.toolCalls = chunk.toolCalls;
+      } else if (chunk.type === 'usage') {
+        slot.metrics.tokens = chunk.tokens;
+      }
     }
     slot.status = 'done';
   } catch (err) {
-    console.error(err);
-    slot.status = 'error';
+    const isAbort =
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      (typeof err === 'object' && err !== null && 'name' in err && (err as { name?: string }).name === 'AbortError');
+    if (isAbort) {
+      canceled = true;
+      slot.status = 'canceled';
+      if (!slot.output.trim()) {
+        slot.output = '已中止';
+      }
+    } else {
+      console.error(err);
+      slot.status = 'error';
+      slot.output = err instanceof Error ? err.message : String(err);
+      slot.toolCalls = null;
+    }
   } finally {
     slot.metrics.totalMs = performance.now() - start;
-    const historyItem: HistoryItem = {
-      id: newId(),
-      createdAt: Date.now(),
-      star: false,
-      title: `Run ${new Date().toLocaleString()}`,
-      providerProfileSnapshot: { ...profile },
-      requestSnapshot: { ...request, systemPrompt: slot.systemPrompt },
-      responseSnapshot: {
-        outputText: slot.output,
-        usage: slot.metrics.tokens,
-        metrics: { ttfbMs: slot.metrics.ttfbMs, totalMs: slot.metrics.totalMs }
-      }
-    };
-    historyItems.value = [historyItem, ...historyItems.value];
-    await persistHistory(historyItems.value);
+    abortControllersBySlotId.delete(slot.id);
+
+    if (!canceled) {
+      const historyItem: HistoryItem = {
+        id: newId(),
+        createdAt: Date.now(),
+        star: false,
+        title: `Run ${new Date().toLocaleString()}`,
+        providerProfileSnapshot: { ...profile },
+        requestSnapshot: { ...request, systemPrompt: request.systemPrompt },
+        responseSnapshot: {
+          outputText: slot.output,
+          toolCalls: slot.toolCalls || undefined,
+          usage: slot.metrics.tokens,
+          metrics: { ttfbMs: slot.metrics.ttfbMs, totalMs: slot.metrics.totalMs }
+        }
+      };
+      historyItems.value = [historyItem, ...historyItems.value];
+      queuePersistHistory(historyItems.value);
+    }
   }
 }
 
 async function runSelected() {
-  for (const slot of selectedSlots.value) {
-    // run sequentially for determinism; could be parallel in real app
-    await runSlot(slot);
-  }
+  await Promise.all(selectedSlots.value.map((slot) => runSlot(slot)));
 }
 
 async function runAll() {
-  for (const slot of slots.value) {
-    await runSlot(slot);
-  }
+  await Promise.all(slots.value.map((slot) => runSlot(slot)));
 }
 
 function toggleStar(id: string) {
   historyItems.value = historyItems.value.map((item) =>
     item.id === id ? { ...item, star: !item.star } : item
   );
-  persistHistory(historyItems.value);
+  queuePersistHistory(historyItems.value);
 }
 
 function loadHistoryIntoEditor(item: HistoryItem) {
@@ -577,6 +833,7 @@ function applyHistoryLoad() {
 
   const targetSlot = selectedSlots.value[0] || slots.value[0] || createSlot();
   if (!slots.value.length) slots.value = [targetSlot];
+  targetSlot.toolCalls = null;
 
   const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt;
   const userPrompts = Array.isArray(item.requestSnapshot.userPrompts)
@@ -619,9 +876,8 @@ function applyHistoryLoad() {
     targetSlot.modelId = item.requestSnapshot.modelId || '';
   }
 
-  if (historyLoadOptions.systemPrompt) {
-    targetSlot.systemPrompt = item.requestSnapshot.systemPrompt || '';
-  }
+  historyLoadOptions.systemPrompt = true;
+  targetSlot.systemPrompt = item.requestSnapshot.systemPrompt || '';
 
   if (historyLoadOptions.params) {
     targetSlot.paramOverride = item.requestSnapshot.params ? { ...(item.requestSnapshot.params as Record<string, unknown>) } : null;
@@ -631,6 +887,7 @@ function applyHistoryLoad() {
     targetSlot.output = item.responseSnapshot.outputText || '';
     targetSlot.status = targetSlot.output ? 'done' : 'idle';
     targetSlot.historyId = item.id;
+    targetSlot.toolCalls = item.responseSnapshot.toolCalls ?? null;
   }
 
   if (historyLoadOptions.metrics) {
@@ -638,8 +895,7 @@ function applyHistoryLoad() {
       ...targetSlot.metrics,
       ttfbMs: item.responseSnapshot.metrics?.ttfbMs ?? null,
       totalMs: item.responseSnapshot.metrics?.totalMs ?? null,
-      tokens: item.responseSnapshot.usage,
-      toolCalls: item.responseSnapshot.toolCalls
+      tokens: item.responseSnapshot.usage
     };
   }
 
@@ -686,10 +942,17 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('keydown', handleGlobalKeydown);
+  window.addEventListener('resize', updateWorkspaceRect);
+  window.addEventListener('scroll', updateWorkspaceRect, { passive: true });
+  nextTick(() => updateWorkspaceRect());
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  window.removeEventListener('resize', updateWorkspaceRect);
+  window.removeEventListener('scroll', updateWorkspaceRect);
 });
 
 watch(
@@ -727,144 +990,199 @@ watch(
 
 <template>
   <div class="app-shell">
-    <AppHeader
-      :project-options="projectOptions"
-      v-model:selected-project="selectedProjectId"
-      :providers-count="providerProfiles.length"
-      :sidebar-collapsed="sidebarCollapsed"
-      :theme="theme"
-      @toggleSidebar="sidebarCollapsed = !sidebarCollapsed"
-      @toggleTheme="toggleTheme"
-      @openProviders="showProviderManager = true"
-    />
+    <AppHeader :project-options="projectOptions" v-model:selected-project="selectedProjectId" :theme="theme" @toggleTheme="toggleTheme" />
 
-    <div class="workspace">
-      <aside class="workspace-sidebar" :class="{ 'is-collapsed': sidebarCollapsed }">
-        <div class="sidebar-section">
-          <div class="sidebar-section__title">Projects</div>
-          <div class="sidebar-list">
-            <button
-              v-for="project in projectOptions"
-              :key="project.id"
-              class="sidebar-item"
-              :class="{ active: selectedProjectId === project.id }"
-              @click="selectedProjectId = project.id"
-            >
-              <span class="sidebar-item__name">{{ project.label }}</span>
-              <span class="sidebar-item__badge">Live</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="sidebar-section__title">
-            Runs History
-            <button class="text-button" @click="showHistory = true">全部</button>
-          </div>
-          <div class="runs-list">
-            <button
-              v-for="run in recentHistory"
-              :key="run.id"
-              class="run-entry"
-              @click="loadHistoryIntoEditor(run)"
-            >
-              <div class="run-entry__title">{{ run.title }}</div>
-              <div class="run-entry__meta">
-                <span>{{ new Date(run.createdAt).toLocaleTimeString() }}</span>
-                <span>{{ run.requestSnapshot.modelId }}</span>
+    <div class="workspace" ref="workspaceRef">
+      <NLayout class="workspace-layout" has-sider sider-placement="left" style="background: transparent">
+        <NLayoutSider
+          class="workspace-layout__sider"
+          collapse-mode="width"
+          :collapsed-width="0"
+          :width="leftSidebarWidthPx"
+          :collapsed="leftSidebarHidden"
+          :show-collapsed-content="false"
+          content-style="background: transparent;"
+          style="background: transparent;"
+        >
+          <aside id="workspace-left-sidebar" class="workspace-sidebar">
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">Projects</div>
+              <div class="sidebar-list">
+                <button
+                  v-for="project in projectOptions"
+                  :key="project.id"
+                  class="sidebar-item"
+                  :class="{ active: selectedProjectId === project.id }"
+                  @click="selectedProjectId = project.id"
+                >
+                  <span class="sidebar-item__name">{{ project.label }}</span>
+                  <span class="sidebar-item__badge">Live</span>
+                </button>
               </div>
-            </button>
-            <div v-if="!recentHistory.length" class="sidebar-empty">暂无运行记录</div>
-          </div>
-        </div>
+            </div>
 
-        <div class="sidebar-section">
-          <div class="sidebar-section__title">Templates</div>
-          <div class="sidebar-list sidebar-list--ghost">
-            <button v-for="template in templatePresets" :key="template" class="sidebar-item ghost">
-              <span class="sidebar-item__name">{{ template }}</span>
-              <span class="sidebar-item__badge muted">Preset</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="sidebar-section__title">
-            Providers
-            <button class="text-button" @click="showProviderManager = true">管理</button>
-          </div>
-          <div class="providers-list">
-            <div v-if="!providerProfiles.length" class="sidebar-empty">暂无 Provider</div>
-            <button
-              v-for="profile in providerProfiles"
-              :key="profile.id"
-              class="provider-chip"
-              @click="showProviderManager = true"
-            >
-              <span class="dot dot--success"></span>
-              <div class="provider-chip__info">
-                <div class="provider-chip__name">{{ profile.name }}</div>
-                <div class="provider-chip__meta">{{ plugins.find((p) => p.id === profile.pluginId)?.name }}</div>
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">
+                Providers
+                <button class="text-button" @click="showProviderManager = true">管理</button>
               </div>
-            </button>
-          </div>
-        </div>
+              <div class="providers-list">
+                <div v-if="!providerProfiles.length" class="sidebar-empty">暂无 Provider</div>
+                <button
+                  v-for="profile in providerProfiles"
+                  :key="profile.id"
+                  class="provider-chip"
+                  @click="showProviderManager = true"
+                >
+                  <span class="dot dot--success"></span>
+                  <div class="provider-chip__info">
+                    <div class="provider-chip__name">{{ profile.name }}</div>
+                    <div class="provider-chip__meta">{{ plugins.find((p) => p.id === profile.pluginId)?.name }}</div>
+                  </div>
+                </button>
+              </div>
+            </div>
 
-        <button class="sidebar-collapse" @click="sidebarCollapsed = !sidebarCollapsed">
-          {{ sidebarCollapsed ? '展开面板' : '折叠侧栏' }}
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">
+                Runs History
+                <button class="text-button" @click="showHistory = true">全部</button>
+              </div>
+              <div class="runs-list">
+                <button
+                  v-for="run in recentHistory"
+                  :key="run.id"
+                  class="run-entry"
+                  @click="loadHistoryIntoEditor(run)"
+                >
+                  <div class="run-entry__title">{{ run.title }}</div>
+                  <div class="run-entry__meta">
+                    <span>{{ new Date(run.createdAt).toLocaleTimeString() }}</span>
+                    <span>{{ run.requestSnapshot.modelId }}</span>
+                  </div>
+                </button>
+                <div v-if="!recentHistory.length" class="sidebar-empty">暂无运行记录</div>
+              </div>
+            </div>
+          </aside>
+        </NLayoutSider>
+
+        <NLayout class="workspace-layout__inner" has-sider sider-placement="right" style="background: transparent">
+          <div class="workspace-layout__main">
+            <main class="workspace-main">
+              <section class="panel composer-panel card">
+                <PromptComposer v-model:messages="shared.userPrompts" />
+              </section>
+
+              <section class="panel slots-panel card">
+                <SlotsSection
+                  :slots="slots"
+                  :providerProfiles="providerProfiles"
+                  :streamOutput="shared.streamOutput"
+                  :refreshingModelsBySlotId="refreshingModelsBySlotId"
+                  :modelOptions="modelOptions"
+                  :defaultParams="shared.defaultParams"
+                  :viewMode="slotViewMode"
+                  :diffSelection="diffSelection"
+                  :showParamDiffOnly="showParamDiffOnly"
+                  @copy="addSlot"
+                  @remove="requestRemoveSlot"
+                  @run="runSlot"
+                  @stop="stopSlot"
+                  @export-curl="exportCurl"
+                  @provider-change="onProviderChange"
+                  @refresh-models="forceRefreshModels"
+                  @runSelected="runSelected"
+                  @runAll="runAll"
+                  @stopAll="stopAllSlots"
+                  @changeViewMode="slotViewMode = $event"
+                  @toggleDiff="toggleDiffSelection"
+                />
+              </section>
+            </main>
+          </div>
+
+          <NLayoutSider
+            class="workspace-layout__sider workspace-layout__sider--right"
+            collapse-mode="width"
+            :collapsed-width="0"
+            :width="rightPanelWidthPx"
+            :collapsed="rightPanelHidden"
+            :show-collapsed-content="false"
+            content-style="background: transparent;"
+            style="background: transparent;"
+          >
+            <ContextPanel
+              id="workspace-right-panel"
+              class="context-panel"
+              :shared="shared"
+              v-model:activeTab="contextPanelTab"
+              v-model:showDiffOnly="showParamDiffOnly"
+            />
+          </NLayoutSider>
+        </NLayout>
+      </NLayout>
+
+      <div class="folding-handle folding-handle--left" :style="leftPanelToggleStyle">
+        <button
+          type="button"
+          class="folding-handle__button"
+          :class="{ 'is-collapsed': leftSidebarHidden }"
+          @click="leftSidebarHidden = !leftSidebarHidden"
+          :aria-pressed="leftSidebarHidden"
+          aria-controls="workspace-left-sidebar"
+          :aria-label="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+          :title="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+        >
+          <span class="sr-only">{{ leftSidebarHidden ? '展开左栏' : '隐藏左栏' }}</span>
+          <span class="folding-handle__icon" aria-hidden="true">
+            <svg v-if="leftSidebarHidden" viewBox="0 0 16 16" focusable="false">
+              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" focusable="false">
+              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
         </button>
-      </aside>
+      </div>
 
-      <main class="workspace-main">
-        <section class="panel composer-panel card">
-          <PromptComposer v-model:messages="shared.userPrompts" />
-        </section>
+      <div class="folding-handle folding-handle--right" :style="rightPanelToggleStyle">
+        <button
+          type="button"
+          class="folding-handle__button"
+          :class="{ 'is-collapsed': rightPanelHidden }"
+          @click="rightPanelHidden = !rightPanelHidden"
+          :aria-pressed="rightPanelHidden"
+          aria-controls="workspace-right-panel"
+          :aria-label="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+          :title="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+        >
+          <span class="sr-only">{{ rightPanelHidden ? '展开右栏' : '隐藏右栏' }}</span>
+          <span class="folding-handle__icon" aria-hidden="true">
+            <svg v-if="rightPanelHidden" viewBox="0 0 16 16" focusable="false">
+              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" focusable="false">
+              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+      </div>
 
-        <section class="panel slots-panel card">
-          <SlotsSection
-            :slots="slots"
-            :providerProfiles="providerProfiles"
-            :streamOutput="shared.streamOutput"
-            :refreshingModelsBySlotId="refreshingModelsBySlotId"
-            :modelOptions="modelOptions"
-            :defaultParams="shared.defaultParams"
-            :viewMode="slotViewMode"
-            :diffSelection="diffSelection"
-            :showParamDiffOnly="showParamDiffOnly"
-            @copy="addSlot"
-            @remove="removeSlot"
-            @run="runSlot"
-            @export-curl="exportCurl"
-            @provider-change="onProviderChange"
-            @refresh-models="forceRefreshModels"
-            @runSelected="runSelected"
-            @runAll="runAll"
-            @changeViewMode="slotViewMode = $event"
-            @toggleDiff="toggleDiffSelection"
-          />
-        </section>
-      </main>
-
-      <ContextPanel
-        class="context-panel"
-        :shared="shared"
-        v-model:activeTab="contextPanelTab"
-        v-model:paramApplyMode="paramApplyMode"
-        v-model:showDiffOnly="showParamDiffOnly"
-      />
     </div>
 
-    <ProviderPanel
-      v-if="showProviderManager"
+  <ProviderPanel
+    v-if="showProviderManager"
       :plugins="plugins"
       :providerProfiles="providerProfiles"
       :newProfile="newProfile"
       :defaultProviderTemplate="defaultProviderTemplate"
       :onResetNewProfile="resetNewProfile"
       :onAddProfile="addProfile"
-      :onRemoveProfile="removeProfile"
+      :onRemoveProfile="requestRemoveProfile"
       :onExportProviders="exportProvidersEncryptedZip"
-      :onImportProviders="importProvidersEncryptedZip"
+      :onImportProviders="requestImportProvidersEncryptedZip"
+      :onClearKeys="requestClearProviderApiKeys"
       @close="showProviderManager = false"
     />
 
@@ -888,7 +1206,18 @@ watch(
       :open="codeDialogOpen"
       :title="codeDialogTitle"
       :code="codeDialogCode"
+      v-model:usePlaceholder="useCurlPlaceholder"
       @close="codeDialogOpen = false"
+    />
+
+    <ConfirmDialog
+      :open="confirmDialogOpen"
+      :title="confirmDialogTitle"
+      :description="confirmDialogDescription"
+      :tone="confirmDialogTone"
+      :confirmText="confirmDialogConfirmText"
+      @close="closeConfirmDialog"
+      @confirm="confirmDialogConfirm"
     />
   </div>
 </template>

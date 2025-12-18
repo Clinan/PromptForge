@@ -11,26 +11,24 @@ body {
 }
 
 .workspace {
-  display: grid;
-  grid-template-columns: 240px 1fr 360px;
-  gap: 6px;
   position: relative;
 }
 
+.workspace-layout,
+.workspace-layout__inner {
+  width: 100%;
+  background: transparent;
+  gap: 6px;
+}
+
+.workspace-layout__inner,
+.workspace-layout__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .context-panel {
-  min-width: 320px;
-}
-
-.workspace-sidebar.is-hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-40px);
-}
-
-.context-panel.is-hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(40px);
+  min-width: 0;
 }
 
 .workspace-sidebar {
@@ -162,99 +160,56 @@ body {
   gap: 4px;
 }
 
-.panel-toggle {
-  position: absolute;
-  top: 50%;
-  z-index: 5;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  width: 34px;
-  padding: 0 10px;
+.folding-handle {
+  position: fixed;
+  z-index: 10;
+}
+
+.folding-handle--left {
+  transform: translate(-50%, -50%);
+}
+
+.folding-handle--right {
+  transform: translate(50%, -50%);
+}
+
+.folding-handle__button {
+  width: 22px;
+  height: 56px;
   border-radius: 999px;
   border: 1px solid var(--stroke);
-  background: var(--card);
+  background: var(--card-solid);
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: var(--shadow);
-  font-size: 12px;
-  overflow: hidden;
-  backdrop-filter: var(--glass-blur);
-  transition:
-    width 0.18s ease,
-    transform 0.18s ease,
-    background 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.panel-toggle__icon {
-  font-weight: 700;
-  color: currentColor;
+.folding-handle__button.is-collapsed {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.panel-toggle__label {
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  color: currentColor;
-}
-
-.panel-toggle:hover,
-.panel-toggle:focus-visible {
-  width: 124px;
+.folding-handle__button:hover,
+.folding-handle__button:focus-visible {
+  outline: none;
   border-color: var(--stroke-strong);
   color: var(--text);
   box-shadow: var(--shadow), 0 0 0 1px var(--stroke-strong);
 }
 
-.panel-toggle:hover .panel-toggle__label,
-.panel-toggle:focus-visible .panel-toggle__label {
-  opacity: 1;
-  transform: translateX(0);
+.folding-handle__icon {
+  display: inline-flex;
+  width: 12px;
+  height: 26px;
 }
 
-.panel-toggle--left {
-  transform: translate(-50%, -50%);
-}
-
-.panel-toggle--left[aria-pressed='true'] {
-  transform: translate(0, -50%);
-}
-
-.panel-toggle--left:hover,
-.panel-toggle--left:focus-visible {
-  transform: translate(0, -50%);
-}
-
-.panel-toggle--right {
-  flex-direction: row-reverse;
-  transform: translate(50%, -50%);
-}
-
-.panel-toggle--right[aria-pressed='true'] {
-  transform: translate(0, -50%);
-}
-
-.panel-toggle--right .panel-toggle__label {
-  transform: translateX(6px);
-}
-
-.panel-toggle--right:hover,
-.panel-toggle--right:focus-visible {
-  transform: translate(0, -50%);
-}
-
-.panel-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-.panel-toggle[aria-pressed='true'] {
-  background: var(--accent-soft);
-  color: var(--accent);
+.folding-handle__icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .top-bar {
@@ -504,6 +459,41 @@ body {
   grid-template-columns: 180px 1fr;
   gap: 12px;
   align-items: start;
+}
+
+.tool-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-detail label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tool-detail label span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tool-detail input,
+.tool-detail textarea {
+  width: 100%;
+}
+
+.tool-schema-editor {
+  min-height: 160px;
+}
+
+.tool-raw-editor {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .tools-list__head {
@@ -814,6 +804,10 @@ body {
   background: var(--state-error);
 }
 
+.status-dot[data-status='canceled'] {
+  background: var(--state-canceled);
+}
+
 .slot-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1105,6 +1099,19 @@ body {
   border-left: 1px solid var(--stroke);
   padding: 20px;
   overflow-y: auto;
+}
+
+.provider-panel__head {
+  margin-bottom: 12px;
+}
+
+.provider-panel__head-actions {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.provider-panel__hint {
+  margin-bottom: 12px;
 }
 
 .provider-form {
@@ -1467,6 +1474,33 @@ body {
   border: 1px solid var(--stroke);
   border-radius: 12px;
   box-shadow: var(--shadow-hover);
+}
+
+.confirm-dialog {
+  width: min(480px, 92vw);
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirm-dialog__title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.confirm-dialog__desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .tools-modal {

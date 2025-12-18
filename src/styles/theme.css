@@ -2,8 +2,8 @@
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.6;
   font-weight: 500;
-  --radius: 18px;
-  --radius-sm: 12px;
+  --radius: 6px;
+  --radius-sm: 4px;
 }
 
 :root[data-theme='light'] {
@@ -23,6 +23,7 @@
   --state-running: #3b82f6;
   --state-done: #10b981;
   --state-error: #ef4444;
+  --state-canceled: #f59e0b;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --shadow-hover: 0 16px 40px rgba(15, 23, 42, 0.1);
   --glass-blur: blur(12px);
@@ -59,6 +60,7 @@
   --state-running: #38bdf8;
   --state-done: #22c55e;
   --state-error: #f87171;
+  --state-canceled: #fbbf24;
   --shadow: 0 20px 60px rgba(2, 6, 23, 0.5);
   --shadow-hover: 0 24px 70px rgba(2, 6, 23, 0.62);
   --glass-blur: blur(16px);

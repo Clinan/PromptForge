@@ -12,6 +12,7 @@ const props = defineProps<{
   onRemoveProfile: (id: string) => void;
   onExportProviders: () => void;
   onImportProviders: (file: File) => void;
+  onClearKeys: () => void;
 }>();
 
 const emit = defineEmits<{
@@ -36,14 +37,19 @@ function onImportChange(e: Event) {
 <template>
   <div class="provider-panel">
     <div class="provider-panel__content">
-      <div class="flex-between" style="margin-bottom: 12px">
+      <div class="flex-between provider-panel__head">
         <h3>Provider 管理</h3>
-        <div class="row" style="flex: 0 0 auto; gap: 8px">
+        <div class="row provider-panel__head-actions">
           <input ref="importInputEl" type="file" accept=".zip" style="display: none" @change="onImportChange" />
           <button class="ghost" style="flex: 0 0 auto" @click="triggerImport">导入（加密 zip）</button>
           <button class="ghost" style="flex: 0 0 auto" @click="props.onExportProviders">导出（加密 zip）</button>
+          <button class="ghost" style="flex: 0 0 auto" @click="props.onClearKeys">清空所有密钥</button>
           <button class="ghost" style="flex: 0 0 auto" @click="emit('close')">关闭</button>
         </div>
+      </div>
+
+      <div class="provider-panel__hint small-text">
+        提示：API Key 会以明文形式保存在本机浏览器的 localStorage 中；请避免在不可信环境使用，并建议定期清空。
       </div>
 
       <div class="provider-form">
@@ -69,7 +75,7 @@ function onImportChange(e: Event) {
           </div>
           <div>
             <label>API Key</label>
-            <input v-model="props.newProfile.apiKey" placeholder="存储在本地" />
+            <input v-model="props.newProfile.apiKey" type="password" autocomplete="off" placeholder="存储在本地" />
           </div>
         </div>
 

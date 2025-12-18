@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import type { ProviderProfile, Slot, SharedState } from '../types';
+import { computed, ref, watch } from 'vue';
+import type { ProviderProfile, Slot, SharedState, ToolCall } from '../types';
+import JsonEditor from './JsonEditor.vue';
 
 const props = defineProps<{
   slot: Slot;
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   copy: [slot: Slot];
   remove: [slotId: string];
   run: [slot: Slot];
+  stop: [slotId: string];
   exportCurl: [slot: Slot];
   providerChange: [slot: Slot];
   refreshModels: [slot: Slot];
@@ -91,10 +93,77 @@ const paramChips = computed(() =>
     .filter((chip) => (props.showParamDiffOnly ? chip.isDiff : true))
 );
 
+const toolCallView = ref<'json' | 'raw'>('raw');
+
+function parseArguments(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+const parsedToolCalls = computed(() =>
+  (props.slot.toolCalls || []).map((call: ToolCall) => {
+    if (!call.function) return call;
+    const parsed = parseArguments(call.function.arguments);
+    return {
+      ...call,
+      function: {
+        ...call.function,
+        arguments: parsed
+      }
+    };
+  })
+);
+
+const toolCallsJson = computed(() =>
+  parsedToolCalls.value.length ? JSON.stringify(parsedToolCalls.value, null, 2) : ''
+);
+
+const toolCallsRawText = computed(() =>
+  props.slot.toolCalls && props.slot.toolCalls.length ? JSON.stringify(props.slot.toolCalls, null, 2) : ''
+);
+
+const shouldShowToolCalls = computed(() => props.slot.status === 'running' || (props.slot.toolCalls?.length || 0) > 0);
+
+const tokensSummary = computed(() => {
+  const tokens = props.slot.metrics.tokens;
+  if (!tokens) return '';
+  const prompt = tokens.prompt ?? '-';
+  const completion = tokens.completion ?? '-';
+  const total = tokens.total ?? '-';
+  if (prompt === '-' && completion === '-' && total === '-') return '';
+  return `${prompt}/${completion}/${total}`;
+});
+
 function toggleDiffSelection() {
   if (!props.diffSelectable) return;
   emit('toggleDiff', props.slot.id);
 }
+
+watch(
+  () => props.slot.status,
+  (status) => {
+    if (status === 'running') {
+      toolCallView.value = 'raw';
+    } else if (status !== 'running' && toolCallView.value === 'raw' && (props.slot.toolCalls?.length || 0) > 0) {
+      toolCallView.value = 'json';
+    }
+  }
+);
+
+watch(
+  () => props.slot.toolCalls?.length || 0,
+  (len) => {
+    if (len > 0 && props.slot.status !== 'running' && toolCallView.value === 'raw') {
+      toolCallView.value = 'json';
+    }
+  }
+);
 </script>
 
 <template>
@@ -104,22 +173,51 @@ function toggleDiffSelection() {
       <div class="slot-card__status">
         <label class="slot-select">
           <input type="checkbox" v-model="props.slot.selected" />
-          <span>选中运行</span>
         </label>
         <span class="status-dot" :data-status="props.slot.status"></span>
         <span class="slot-title">{{ props.slot.modelId || '未选择模型' }}</span>
       </div>
       <div class="slot-card__head-actions">
-        <button
-          v-if="props.diffSelectable"
-          class="ghost pill"
-          :class="{ active: props.diffSelected }"
-          @click="toggleDiffSelection"
-        >
-          {{ props.diffSelected ? '已选中对比' : '加入对比' }}
-        </button>
-        <button class="ghost icon-button" @click="emit('copy', props.slot)" title="复制 Slot">⎘</button>
-        <button class="ghost icon-button" @click="emit('remove', props.slot.id)" :disabled="props.disableRemove">✕</button>
+        <div class="slot-head-actions__group">
+          <button
+            v-if="props.slot.status === 'running'"
+            class="pill danger"
+            type="button"
+            @click="emit('stop', props.slot.id)"
+            title="停止运行"
+          >
+            停止
+          </button>
+          <button
+            v-else
+            class="pill"
+            type="button"
+            @click="emit('run', props.slot)"
+            title="运行 Slot"
+          >
+            运行
+          </button>
+          <button class="ghost pill" type="button" @click="emit('exportCurl', props.slot)">导出 cURL</button>
+        </div>
+        <div class="slot-head-actions__group">
+          <button
+            v-if="props.diffSelectable"
+            class="ghost pill"
+            :class="{ active: props.diffSelected }"
+            @click="toggleDiffSelection"
+          >
+            {{ props.diffSelected ? '已选中对比' : '加入对比' }}
+          </button>
+          <button class="ghost pill" type="button" @click="emit('copy', props.slot)">复制 Slot</button>
+          <button
+            class="ghost pill danger"
+            type="button"
+            @click="emit('remove', props.slot.id)"
+            :disabled="props.disableRemove"
+          >
+            删除
+          </button>
+        </div>
       </div>
     </header>
 
@@ -179,11 +277,6 @@ function toggleDiffSelection() {
       </span>
       <span v-if="!paramChips.length" class="chip muted">继承默认参数</span>
     </div>
-
-    <label class="system-field">
-      <span>System Prompt</span>
-      <textarea v-model="props.slot.systemPrompt" placeholder="为该 Slot 定义 System Prompt" />
-    </label>
 
     <details class="slot-collapse">
       <summary>参数覆盖</summary>
@@ -268,6 +361,12 @@ function toggleDiffSelection() {
         />
       </div>
     </details>
+    
+    <label class="system-field">
+      <span>System Prompt</span>
+      <textarea v-model="props.slot.systemPrompt" placeholder="为该 Slot 定义 System Prompt" />
+    </label>
+
 
     <div class="slot-output">
       <div class="slot-output__head">
@@ -275,27 +374,32 @@ function toggleDiffSelection() {
         <div class="slot-metrics">
           <span class="chip">TTFB {{ props.slot.metrics.ttfbMs ? `${props.slot.metrics.ttfbMs.toFixed(0)} ms` : '-' }}</span>
           <span class="chip">耗时 {{ props.slot.metrics.totalMs ? `${props.slot.metrics.totalMs.toFixed(0)} ms` : '-' }}</span>
+          <span v-if="tokensSummary" class="chip">Tokens {{ tokensSummary }}</span>
         </div>
       </div>
       <pre class="slot-output__body">{{ props.slot.output || '等待运行...' }}</pre>
     </div>
 
-    <footer class="slot-card__footer">
-      <div class="row gap-small">
-        <button
-          class="pill"
-          :disabled="props.slot.status === 'running'"
-          @click="emit('run', props.slot)"
-          title="运行 Slot"
-        >
-          运行
-        </button>
-        <button class="ghost pill" @click="emit('exportCurl', props.slot)">导出 cURL</button>
+    <div v-if="shouldShowToolCalls" class="slot-toolcalls">
+      <div class="slot-output__head">
+        <span>Tool Calls</span>
+        <div class="slot-toolcalls__toggle">
+          <button :class="{ active: toolCallView === 'json' }" :disabled="!parsedToolCalls.length" @click="toolCallView = 'json'">
+            JSON
+          </button>
+          <button :class="{ active: toolCallView === 'raw' }" @click="toolCallView = 'raw'">Raw Text</button>
+        </div>
       </div>
-      <div class="row gap-small">
-        <button class="ghost pill" @click="emit('copy', props.slot)">复制 Slot</button>
-        <button class="ghost pill danger" @click="emit('remove', props.slot.id)" :disabled="props.disableRemove">删除</button>
-      </div>
-    </footer>
+      <JsonEditor
+        v-if="toolCallView === 'json' && parsedToolCalls.length"
+        class="slot-toolcalls__editor"
+        :modelValue="toolCallsJson"
+        readonly
+      />
+      <div v-else-if="toolCallView === 'json'" class="slot-toolcalls__empty">暂无工具调用数据</div>
+      <pre v-else class="slot-toolcalls__raw">{{ toolCallsRawText || '等待工具调用流...' }}</pre>
+    </div>
+
+    <footer class="slot-card__footer"></footer>
   </article>
 </template>

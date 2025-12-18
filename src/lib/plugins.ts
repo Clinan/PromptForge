@@ -1,4 +1,4 @@
-import type { Plugin, ProviderProfile } from '../types';
+import type { Plugin, ProviderProfile, ToolCall, PluginChunk } from '../types';
 
 type PluginRequest = import('../types').PluginRequest;
 type PluginInvokeOptions = import('../types').PluginInvokeOptions;
@@ -75,12 +75,37 @@ function removeEmptyEntries(obj: Record<string, unknown>) {
   return cleaned;
 }
 
-async function* streamOpenAIStyle(resp: Response) {
+type ToolCallBuilder = {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments: string;
+  };
+};
+
+function normalizeToolCalls(builders: Record<number, ToolCallBuilder>) {
+  return Object.values(builders)
+    .map<ToolCall>((builder) => ({
+      id: builder.id,
+      type: builder.type,
+      function: builder.function
+        ? {
+            name: builder.function.name,
+            arguments: builder.function.arguments
+          }
+        : undefined
+    }))
+    .filter((call) => call.function && (call.function.name || call.function.arguments));
+}
+
+async function* streamOpenAIStyle(resp: Response): AsyncGenerator<PluginChunk, void, unknown> {
   if (!resp.body) throw new Error('No stream body');
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let done = false;
+  const toolCallBuilders: Record<number, ToolCallBuilder> = {};
 
   while (!done) {
     const { value, done: readerDone } = await reader.read();
@@ -96,15 +121,90 @@ async function* streamOpenAIStyle(resp: Response) {
       if (!payload || payload === '[DONE]') continue;
       try {
         const parsed = JSON.parse(payload);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          yield delta as string;
+        const usage = parsed?.usage;
+        if (usage && typeof usage === 'object') {
+          const promptTokens =
+            typeof usage.prompt_tokens === 'number'
+              ? usage.prompt_tokens
+              : typeof usage.prompt === 'number'
+                ? usage.prompt
+                : undefined;
+          const completionTokens =
+            typeof usage.completion_tokens === 'number'
+              ? usage.completion_tokens
+              : typeof usage.completion === 'number'
+                ? usage.completion
+                : undefined;
+          const totalTokens =
+            typeof usage.total_tokens === 'number' ? usage.total_tokens : typeof usage.total === 'number' ? usage.total : undefined;
+          if (promptTokens !== undefined || completionTokens !== undefined || totalTokens !== undefined) {
+            yield {
+              type: 'usage',
+              tokens: {
+                prompt: promptTokens,
+                completion: completionTokens,
+                total: totalTokens
+              }
+            };
+          }
+        }
+        const delta = parsed.choices?.[0]?.delta;
+        const content = delta?.content;
+        if (content) {
+          yield { type: 'content', text: content as string };
+        }
+        const toolCallsDelta = Array.isArray(delta?.tool_calls) ? delta.tool_calls : null;
+        if (toolCallsDelta) {
+          for (const entry of toolCallsDelta) {
+            const index = typeof entry?.index === 'number' ? entry.index : 0;
+            const builder = (toolCallBuilders[index] ||= { function: { arguments: '' } });
+            if (entry?.id) builder.id = entry.id;
+            if (entry?.type) builder.type = entry.type;
+            const fn = entry?.function;
+            if (fn?.name) {
+              builder.function = builder.function || { arguments: '' };
+              builder.function.name = fn.name;
+            }
+            if (typeof fn?.arguments === 'string') {
+              builder.function = builder.function || { arguments: '' };
+              builder.function.arguments = `${builder.function.arguments}${fn.arguments}`;
+            }
+          }
+          const snapshot = normalizeToolCalls(toolCallBuilders);
+          if (snapshot.length) {
+            yield { type: 'tool_calls', toolCalls: snapshot };
+          }
+        }
+        const finishReason = parsed.choices?.[0]?.finish_reason;
+        if (finishReason === 'tool_calls' && Object.keys(toolCallBuilders).length) {
+          yield { type: 'tool_calls', toolCalls: normalizeToolCalls(toolCallBuilders) };
+          Object.keys(toolCallBuilders).forEach((key) => delete toolCallBuilders[Number(key)]);
         }
       } catch (err) {
         console.warn('解析流式 chunk 失败', err, payload);
       }
     }
   }
+  if (Object.keys(toolCallBuilders).length) {
+    yield { type: 'tool_calls', toolCalls: normalizeToolCalls(toolCallBuilders) };
+  }
+}
+
+function normalizeMessages(request: PluginRequest) {
+  const normalizedMessages = Array.isArray(request.messages)
+    ? request.messages
+        .map((msg) => ({
+          role: msg && typeof msg.role === 'string' ? msg.role : 'user',
+          content: typeof msg.content === 'string' ? msg.content : ''
+        }))
+        .filter((msg) => msg.content.trim().length > 0)
+    : null;
+  const fallbackMessages = request.userPrompts.map((content) => ({ role: 'user', content }));
+  const messages = normalizedMessages?.length ? normalizedMessages.slice() : fallbackMessages.slice();
+  if ((request.systemPrompt || '').trim()) {
+    messages.unshift({ role: 'system', content: request.systemPrompt });
+  }
+  return messages;
 }
 
 function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
@@ -173,19 +273,7 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
       }
 
       const useStream = opts.stream !== false && request.stream !== false;
-      const normalizedMessages = Array.isArray(request.messages)
-        ? request.messages
-            .map((msg) => ({
-              role: msg && typeof msg.role === 'string' ? msg.role : 'user',
-              content: typeof msg.content === 'string' ? msg.content : ''
-            }))
-            .filter((msg) => msg.content.trim().length > 0)
-        : null;
-      const fallbackMessages = request.userPrompts.map((content) => ({ role: 'user', content }));
-      const messages = normalizedMessages?.length ? normalizedMessages.slice() : fallbackMessages.slice();
-      if ((request.systemPrompt || '').trim()) {
-        messages.unshift({ role: 'system', content: request.systemPrompt });
-      }
+      const messages = normalizeMessages(request);
       const body = {
         model: request.modelId,
         messages,
@@ -195,12 +283,15 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
       };
 
       const payload = removeEmptyEntries(body);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (config.apiKey && config.apiKey.trim()) {
+        headers[authHeader] = `${authPrefix}${config.apiKey}`.trim();
+      }
       const resp = await fetch(config.baseUrl || options.defaultUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          [authHeader]: `${authPrefix}${config.apiKey}`.trim()
-        },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal
       });
@@ -214,18 +305,29 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
         yield* streamOpenAIStyle(resp);
       } else {
         const data = await resp.json();
-        const content = data?.choices?.[0]?.message?.content || '';
+        const message = data?.choices?.[0]?.message;
+        const content = message?.content;
         if (content) {
-          yield content as string;
+          yield { type: 'content', text: content as string };
+        }
+        const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : null;
+        if (toolCalls?.length) {
+          yield { type: 'tool_calls', toolCalls };
+        }
+        const usage = data?.usage;
+        if (usage && typeof usage === 'object') {
+          const promptTokens = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined;
+          const completionTokens = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined;
+          const totalTokens = typeof usage.total_tokens === 'number' ? usage.total_tokens : undefined;
+          if (promptTokens !== undefined || completionTokens !== undefined || totalTokens !== undefined) {
+            yield { type: 'usage', tokens: { prompt: promptTokens, completion: completionTokens, total: totalTokens } };
+          }
         }
       }
     },
     buildCurl(config, request) {
       const useStream = request.stream !== false;
-      const messages = [
-        { role: 'system', content: request.systemPrompt },
-        ...request.userPrompts.map((content) => ({ role: 'user', content }))
-      ];
+      const messages = normalizeMessages(request);
       const body = removeEmptyEntries({
         model: request.modelId,
         messages,

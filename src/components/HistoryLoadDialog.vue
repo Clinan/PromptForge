@@ -54,8 +54,8 @@ const emit = defineEmits<{
             <span>Model</span>
           </label>
           <label class="history-load-check">
-            <input type="checkbox" v-model="props.options.systemPrompt" />
-            <span>System Prompt</span>
+            <input type="checkbox" v-model="props.options.systemPrompt" disabled />
+            <span>System Prompt（必选）</span>
           </label>
           <label class="history-load-check">
             <input type="checkbox" v-model="props.options.params" />
@@ -90,4 +90,3 @@ const emit = defineEmits<{
     </div>
   </teleport>
 </template>
-

@@ -94,10 +94,8 @@ function previewText(text: string) {
     <div class="composer__head">
       <div>
         <div class="panel-title">Prompt Composer</div>
-        <div class="panel-subtitle">按顺序组织 system/user/assistant 消息，快速迭代提示词。</div>
       </div>
       <div class="composer__actions">
-        <span class="small-text">新增消息</span>
         <div class="composer__role-buttons">
           <button class="pill ghost" @click="addMessage('system')">System</button>
           <button class="pill ghost" @click="addMessage('user')">User</button>

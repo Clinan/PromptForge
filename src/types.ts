@@ -31,15 +31,29 @@ export type Plugin = {
     config: ProviderProfile,
     request: PluginRequest,
     options: PluginInvokeOptions
-  ) => AsyncGenerator<string, void, unknown>;
+  ) => AsyncGenerator<PluginChunk, void, unknown>;
   buildCurl: (config: ProviderProfile, request: PluginRequest) => string;
 };
+
+export type ToolCall = {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: unknown;
+  };
+  [key: string]: unknown;
+};
+
+export type PluginChunk =
+  | { type: 'content'; text: string }
+  | { type: 'tool_calls'; toolCalls: ToolCall[] }
+  | { type: 'usage'; tokens: SlotMetrics['tokens'] };
 
 export type SlotMetrics = {
   ttfbMs: number | null;
   totalMs: number | null;
   tokens?: { prompt?: number; completion?: number; total?: number };
-  toolCalls?: { name: string; args: unknown; result?: string }[];
 };
 
 export type Slot = {
@@ -50,8 +64,9 @@ export type Slot = {
   systemPrompt: string;
   paramOverride: Record<string, unknown> | null;
   selected: boolean;
-  status: 'idle' | 'running' | 'done' | 'error';
+  status: 'idle' | 'running' | 'done' | 'error' | 'canceled';
   output: string;
+  toolCalls: ToolCall[] | null;
   metrics: SlotMetrics;
   historyId?: string;
   isExporting?: boolean;
@@ -67,7 +82,7 @@ export type HistoryItem = {
   requestSnapshot: PluginRequest & { systemPrompt: string };
   responseSnapshot: {
     outputText: string;
-    toolCalls?: { name: string; args: unknown; result?: string }[];
+    toolCalls?: ToolCall[];
     usage?: SlotMetrics['tokens'];
     metrics: { ttfbMs: number | null; totalMs: number | null };
   };
@@ -79,9 +94,16 @@ export type UserPromptPreset = {
   text: string;
 };
 
+export type VariableBinding = {
+  id: string;
+  key: string;
+  value: string;
+};
+
 export type SharedState = {
   userPrompts: UserPromptPreset[];
   toolsDefinition: string;
+  variables: VariableBinding[];
   defaultParams: {
     temperature: number;
     top_p: number;

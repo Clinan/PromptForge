@@ -87,10 +87,14 @@ watch(
               </div>
             </div>
           </summary>
-          <div class="history-collapse__body">
+            <div class="history-collapse__body">
               <div class="row" style="flex-wrap: wrap; gap: 6px; align-items: center">
               <span class="chip">首包 {{ item.responseSnapshot.metrics.ttfbMs?.toFixed(0) ?? '-' }} ms</span>
               <span class="chip">总耗时 {{ item.responseSnapshot.metrics.totalMs?.toFixed(0) ?? '-' }} ms</span>
+              <span class="chip">Tokens {{ item.responseSnapshot.usage?.total ?? '-' }}</span>
+              <span v-if="(item.responseSnapshot.toolCalls?.length || 0) > 0" class="chip">
+                Tool Calls {{ item.responseSnapshot.toolCalls?.length || 0 }}
+              </span>
               <button class="ghost" style="flex: 0 0 auto" @click="emit('load', item)">载入</button>
               <button class="ghost" style="flex: 0 0 auto" @click="emit('toggleStar', item.id)">
                 {{ item.star ? 'Unstar' : 'Star' }}
