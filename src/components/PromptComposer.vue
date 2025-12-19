@@ -1,19 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { Button, Card, Col, Input, Row, Select, Space, Tag, Typography } from 'ant-design-vue';
-import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  PlusOutlined,
-  UnfoldOutlined
-} from '@ant-design/icons-vue';
 import type { UserPromptPreset } from '../types';
 import { newId } from '../lib/id';
-
-const { TextArea } = Input;
-const { Paragraph: TypographyParagraph, Text: TypographyText, Title: TypographyTitle } = Typography;
 
 const props = defineProps<{
   messages: UserPromptPreset[];
@@ -35,11 +23,6 @@ const roleLabels: Record<UserPromptPreset['role'], string> = {
   user: 'User',
   assistant: 'Assistant'
 };
-
-const roleOptions = Object.entries(roleLabels).map(([value, label]) => ({
-  label,
-  value
-}));
 
 function addMessage(role: UserPromptPreset['role'] = 'user') {
   messagesProxy.value = [
@@ -107,105 +90,71 @@ function previewText(text: string) {
 </script>
 
 <template>
-  <Space direction="vertical" size="middle" style="width: 100%">
-    <Row align="middle" justify="space-between">
-      <Col flex="auto">
-        <TypographyTitle level="4" style="margin-bottom: 0">Prompt Composer</TypographyTitle>
-      </Col>
-      <Col flex="0 0 auto">
-        <Space size="small" wrap>
-          <Button @click="addMessage('system')">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            System
-          </Button>
-          <Button @click="addMessage('user')">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            User
-          </Button>
-          <Button @click="addMessage('assistant')">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            Assistant
-          </Button>
-        </Space>
-      </Col>
-    </Row>
+  <div class="composer">
+    <div class="composer__head">
+      <div>
+        <div class="panel-title">Prompt Composer</div>
+      </div>
+      <div class="composer__actions">
+        <div class="composer__role-buttons">
+          <button class="pill ghost" @click="addMessage('system')">System</button>
+          <button class="pill ghost" @click="addMessage('user')">User</button>
+          <button class="pill ghost" @click="addMessage('assistant')">Assistant</button>
+        </div>
+      </div>
+    </div>
 
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <Card v-for="(message, index) in props.messages" :key="message.id" size="small">
-        <template #title>
-          <Space align="center" size="middle">
-            <Select
+    <div class="message-list">
+      <article v-for="(message, index) in props.messages" :key="message.id" class="message-card">
+        <div class="message-card__head">
+          <div class="role-chip" :data-role="message.role">
+            <select
               :value="message.role"
-              :options="roleOptions"
-              style="min-width: 120px"
-              @change="(value) => updateMessage(message.id, { role: value as UserPromptPreset['role'] })"
-            />
-            <Tag>#{{ index + 1 }}</Tag>
-            <TypographyText type="secondary">{{ message.text.length }} 字</TypographyText>
-          </Space>
-        </template>
-        <template #extra>
-          <Space size="small">
-            <Button size="small" @click="duplicateMessage(message)" :title="'复制此消息'">
-              <template #icon>
-                <CopyOutlined />
-              </template>
-            </Button>
-            <Button size="small" :disabled="index === 0" @click="moveMessage(message.id, 'up')" :title="'上移'">
-              <template #icon>
-                <ArrowUpOutlined />
-              </template>
-            </Button>
-            <Button
-              size="small"
-              :disabled="index === props.messages.length - 1"
+              @change="updateMessage(message.id, { role: ($event.target as HTMLSelectElement).value as UserPromptPreset['role'] })"
+            >
+              <option v-for="(label, role) in roleLabels" :key="role" :value="role">{{ label }}</option>
+            </select>
+          </div>
+          <div class="message-card__meta">
+            <span class="small-text">#{{ index + 1 }}</span>
+            <span class="small-text">{{ message.text.length }} 字</span>
+          </div>
+          <div class="message-card__tools">
+            <button class="icon-button ghost" @click="duplicateMessage(message)" title="复制此消息">⎘</button>
+            <button class="icon-button ghost" @click="moveMessage(message.id, 'up')" :disabled="index === 0" title="上移">
+              ↑
+            </button>
+            <button
+              class="icon-button ghost"
               @click="moveMessage(message.id, 'down')"
-              :title="'下移'"
+              :disabled="index === props.messages.length - 1"
+              title="下移"
             >
-              <template #icon>
-                <ArrowDownOutlined />
-              </template>
-            </Button>
-            <Button
-              size="small"
-              danger
-              :disabled="props.messages.length === 1"
-              @click="removeMessage(message.id)"
-            >
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-            </Button>
-          </Space>
-        </template>
+              ↓
+            </button>
+            <button class="icon-button ghost danger" :disabled="props.messages.length === 1" @click="removeMessage(message.id)">
+              ✕
+            </button>
+          </div>
+        </div>
 
-        <div v-if="isCollapsed(message)">
-          <TypographyParagraph type="secondary" style="margin-bottom: 8px">
-            {{ previewText(message.text) }}
-          </TypographyParagraph>
-          <Button type="link" @click="toggleCollapse(message.id)">
-            <template #icon>
-              <UnfoldOutlined />
-            </template>
-            展开
-          </Button>
+        <div v-if="isCollapsed(message)" class="message-card__preview">
+          <div class="preview-text">{{ previewText(message.text) }}</div>
+          <button class="text-button" @click="toggleCollapse(message.id)">展开</button>
         </div>
-        <div v-else>
-          <TextArea
-            :value="message.text"
-            :auto-size="{ minRows: 4 }"
-            :placeholder="message.role === 'system' ? 'System 指令...' : '输入消息内容'"
-            @update:value="(value) => updateMessage(message.id, { text: value })"
-          />
-          <Button type="link" @click="toggleCollapse(message.id)">收起</Button>
+        <textarea
+          v-else
+          class="message-editor"
+          :value="message.text"
+          :placeholder="message.role === 'system' ? 'System 指令...' : '输入消息内容'"
+          @input="updateMessage(message.id, { text: ($event.target as HTMLTextAreaElement).value })"
+        />
+        <div class="message-card__footer">
+          <button class="text-button" @click="toggleCollapse(message.id)">
+            {{ isCollapsed(message) ? '展开' : '收起' }}
+          </button>
         </div>
-      </Card>
-    </Space>
-  </Space>
+      </article>
+    </div>
+  </div>
 </template>
