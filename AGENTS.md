@@ -128,9 +128,6 @@ TruestPrompt 是 PC Web 端的「大模型调试台」，核心价值是：用�
 - 安装依赖：`pnpm install`
 - 本地开发：`pnpm dev`
 - 构建检查：`pnpm build`
-- （若有）类型检查：`pnpm typecheck`
-- （若有）Lint：`pnpm lint`
-- （若有）测试：`pnpm test`
 
 **提交前最低要求：**
 - 关键路径手测通过：Run / Stop / History / Export cURL / Profile 切换

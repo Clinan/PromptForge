@@ -50,71 +50,24 @@ const workspaceGapPx = 6;
 const leftSidebarWidthPx = 240;
 const rightPanelWidthPx = 360;
 const workspaceRef = ref<HTMLElement | null>(null);
-const workspaceRect = reactive<{ top: number; left: number; right: number; height: number }>({
-  top: 0,
-  left: 0,
-  right: 0,
-  height: 0
-});
-const viewportWidth = ref(0);
-
-function updateWorkspaceRect() {
-  if (typeof window === 'undefined') return;
-  viewportWidth.value = window.innerWidth;
-  const el = workspaceRef.value;
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  workspaceRect.top = rect.top;
-  workspaceRect.left = rect.left;
-  workspaceRect.right = rect.right;
-  workspaceRect.height = rect.height;
-}
-
-const handleVerticalPosition = computed(() => {
-  if (workspaceRect.height > 0) {
-    return `${workspaceRect.top + workspaceRect.height / 2}px`;
-  }
-  if (typeof window !== 'undefined') {
-    return `${window.innerHeight / 2}px`;
-  }
-  return '50%';
-});
 
 const leftPanelToggleStyle = computed(() => {
-  const offset = (leftSidebarHidden.value ? 0 : leftSidebarWidthPx) + workspaceGapPx / 2;
-  const baseLeft = workspaceRect.left || 0;
+  const offset = leftSidebarHidden.value ? 16 : leftSidebarWidthPx + 16;
   return {
-    left: `${baseLeft + offset}px`,
-    top: handleVerticalPosition.value
+    left: `${offset}px`,
+    top: '50%'
   };
 });
 
 const rightPanelToggleStyle = computed(() => {
-  const viewport = viewportWidth.value || (typeof window !== 'undefined' ? window.innerWidth : 0);
-  const baseRight =
-    workspaceRect.right && viewport ? Math.max(viewport - workspaceRect.right, 0) : 0;
-  const offset = (rightPanelHidden.value ? 0 : rightPanelWidthPx) + workspaceGapPx / 2;
+  const offset = rightPanelHidden.value ? 16 : rightPanelWidthPx + 16;
   return {
-    right: `${baseRight + offset}px`,
-    top: handleVerticalPosition.value
+    right: `${offset}px`,
+    top: '50%'
   };
 });
 
-watch(
-  () => [leftSidebarHidden.value, rightPanelHidden.value],
-  () => {
-    nextTick(() => updateWorkspaceRect());
-  }
-);
 
-watch(
-  workspaceRef,
-  (el) => {
-    if (!el) return;
-    nextTick(() => updateWorkspaceRect());
-  },
-  { immediate: true }
-);
 
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
@@ -206,7 +159,7 @@ const initialUserPrompt: UserPromptPreset = {
 
 const shared = reactive<SharedState>({
   userPrompts: [initialUserPrompt],
-  toolsDefinition: '[{"name":"fetchDocs","description":"Query project docs"}]',
+  toolsDefinition: '[{"type":"function","function":{"name":"fetchDocs","description":"Query project docs","parameters":{"type":"object","properties":{},"additionalProperties":true}}}]',
   variables: [{ id: newId(), key: '', value: '' }],
   defaultParams: { ...defaultSharedParams },
   enableSuggestions: true,
@@ -379,11 +332,26 @@ function stopAllSlots() {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
+  // 停止运行快捷键
   const wantsStop = (event.ctrlKey || event.metaKey) && (event.key === '.' || event.code === 'Period');
-  if (!wantsStop) return;
-  if (!hasRunningSlots.value) return;
-  event.preventDefault();
-  stopAllSlots();
+  if (wantsStop && hasRunningSlots.value) {
+    event.preventDefault();
+    stopAllSlots();
+    return;
+  }
+
+  // 边栏切换快捷键
+  const isModifierPressed = event.ctrlKey || event.metaKey;
+  if (isModifierPressed && event.key === '[') {
+    event.preventDefault();
+    leftSidebarHidden.value = !leftSidebarHidden.value;
+    return;
+  }
+  if (isModifierPressed && event.key === ']') {
+    event.preventDefault();
+    rightPanelHidden.value = !rightPanelHidden.value;
+    return;
+  }
 }
 
 function loadProfiles() {
@@ -957,16 +925,11 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   window.addEventListener('keydown', handleGlobalKeydown);
-  window.addEventListener('resize', updateWorkspaceRect);
-  window.addEventListener('scroll', updateWorkspaceRect, { passive: true });
-  nextTick(() => updateWorkspaceRect());
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload);
   window.removeEventListener('keydown', handleGlobalKeydown);
-  window.removeEventListener('resize', updateWorkspaceRect);
-  window.removeEventListener('scroll', updateWorkspaceRect);
 });
 
 watch(
@@ -1129,11 +1092,13 @@ watch(
         >
           <span class="sr-only">{{ leftSidebarHidden ? '展开左栏' : '隐藏左栏' }}</span>
           <span class="folding-handle__icon" aria-hidden="true">
-            <svg v-if="leftSidebarHidden" viewBox="0 0 16 16" focusable="false">
-              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <svg v-if="leftSidebarHidden" viewBox="0 0 24 24" focusable="false">
+              <path d="M9 12l6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <svg v-else viewBox="0 0 16 16" focusable="false">
-              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <svg v-else viewBox="0 0 24 24" focusable="false">
+              <path d="M15 12l-6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </span>
         </button>
@@ -1152,11 +1117,13 @@ watch(
         >
           <span class="sr-only">{{ rightPanelHidden ? '展开右栏' : '隐藏右栏' }}</span>
           <span class="folding-handle__icon" aria-hidden="true">
-            <svg v-if="rightPanelHidden" viewBox="0 0 16 16" focusable="false">
-              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <svg v-if="rightPanelHidden" viewBox="0 0 24 24" focusable="false">
+              <path d="M15 12l-6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <svg v-else viewBox="0 0 16 16" focusable="false">
-              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <svg v-else viewBox="0 0 24 24" focusable="false">
+              <path d="M9 12l6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </span>
         </button>

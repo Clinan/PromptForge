@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { Button } from 'ant-design-vue';
 import type { ProviderProfile, Slot, SharedState } from '../types';
 import SlotCard from './SlotCard.vue';
 
@@ -38,12 +39,28 @@ const selectedCount = computed(() => props.slots.filter((slot) => slot.selected)
         <div class="panel-subtitle">多模型并行运行的一站式调试区。</div>
       </div>
       <div class="slots-head__actions">
-        <div class="row gap-small">
-          <button class="ghost pill" :disabled="hasRunning || selectedCount === 0" @click="emit('runSelected')">
-            运行已选 Slot
-          </button>
-          <button class="pill" :disabled="hasRunning" @click="emit('runAll')">运行全部</button>
-          <button class="pill danger" :disabled="!hasRunning" @click="emit('stopAll')">停止全部</button>
+        <div class="slots-actions-row">
+          <Button
+            class="slots-action-btn slots-action-btn--ghost"
+            :disabled="hasRunning || selectedCount === 0"
+            @click="emit('runSelected')"
+          >
+            运行已选
+          </Button>
+          <Button 
+            class="slots-action-btn slots-action-btn--primary" 
+            :disabled="hasRunning" 
+            @click="emit('runAll')"
+          >
+            运行全部
+          </Button>
+          <Button 
+            class="slots-action-btn slots-action-btn--danger" 
+            :disabled="!hasRunning" 
+            @click="emit('stopAll')"
+          >
+            停止全部
+          </Button>
         </div>
       </div>
     </div>

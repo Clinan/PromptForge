@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { Button } from 'ant-design-vue';
 import type { ProviderProfile, Slot, SharedState, ToolCall } from '../types';
 import JsonEditor from './JsonEditor.vue';
 
@@ -185,37 +186,44 @@ watch(
         <span class="slot-title">{{ props.slot.modelId || '未选择模型' }}</span>
       </div>
       <div class="slot-card__head-actions">
-        <div class="slot-head-actions__group">
-          <button
+        <div class="slot-actions-group">
+          <Button
             v-if="props.slot.status === 'running'"
-            class="pill danger"
-            type="button"
+            class="slot-action-btn slot-action-btn--danger"
             @click="emit('stop', props.slot.id)"
             title="停止运行"
           >
             停止
-          </button>
-          <button
+          </Button>
+          <Button
             v-else
-            class="pill"
-            type="button"
+            class="slot-action-btn slot-action-btn--primary"
             @click="emit('run', props.slot)"
             title="运行 Slot"
           >
             运行
-          </button>
-          <button class="ghost pill" type="button" @click="emit('exportCurl', props.slot)">导出 cURL</button>
+          </Button>
+          <Button 
+            class="slot-action-btn slot-action-btn--ghost" 
+            @click="emit('exportCurl', props.slot)"
+          >
+            导出 cURL
+          </Button>
         </div>
-        <div class="slot-head-actions__group">
-          <button class="ghost pill" type="button" @click="emit('copy', props.slot)">复制 Slot</button>
-          <button
-            class="ghost pill danger"
-            type="button"
+        <div class="slot-actions-group">
+          <Button 
+            class="slot-action-btn slot-action-btn--ghost" 
+            @click="emit('copy', props.slot)"
+          >
+            复制
+          </Button>
+          <Button
+            class="slot-action-btn slot-action-btn--ghost-danger"
             @click="emit('remove', props.slot.id)"
             :disabled="props.disableRemove"
           >
             删除
-          </button>
+          </Button>
         </div>
       </div>
     </header>
@@ -248,7 +256,6 @@ watch(
               <button
                 v-for="model in modelSuggestions"
                 :key="model.id"
-                type="button"
                 class="model-suggest__item"
                 @mousedown.prevent
                 @click="chooseModel(model.id)"
@@ -259,7 +266,7 @@ watch(
             </div>
           </div>
           <button
-            class="ghost icon-button"
+            class="model-refresh-btn"
             :disabled="props.refreshingModels"
             :title="props.refreshingModels ? '刷新中...' : '刷新模型缓存（缓存 1 天）'"
             @click="emit('refreshModels', props.slot)"
@@ -344,10 +351,21 @@ watch(
       <div class="slot-output__head">
         <span>Tool Calls</span>
         <div class="slot-toolcalls__toggle">
-          <button :class="{ active: toolCallView === 'json' }" :disabled="!parsedToolCalls.length" @click="toolCallView = 'json'">
+          <button
+            class="toolcalls-toggle-btn"
+            :class="{ active: toolCallView === 'json' }"
+            :disabled="!parsedToolCalls.length"
+            @click="toolCallView = 'json'"
+          >
             JSON
           </button>
-          <button :class="{ active: toolCallView === 'raw' }" @click="toolCallView = 'raw'">Raw Text</button>
+          <button
+            class="toolcalls-toggle-btn"
+            :class="{ active: toolCallView === 'raw' }"
+            @click="toolCallView = 'raw'"
+          >
+            Raw Text
+          </button>
         </div>
       </div>
       <JsonEditor
