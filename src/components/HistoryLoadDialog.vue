@@ -74,12 +74,10 @@ const emit = defineEmits<{
 
       <Text type="secondary">提示：将优先写入“已选中”的 Slot（否则写入第一个 Slot）。</Text>
 
-      <Row justify="end">
-        <Space>
-          <Button @click="emit('close')">取消</Button>
-          <Button type="primary" @click="emit('confirm')">确定载入</Button>
-        </Space>
-      </Row>
+      <Space style="justify-content: flex-end; width: 100%">
+        <Button @click="emit('close')">取消</Button>
+        <Button type="primary" @click="emit('confirm')">确定载入</Button>
+      </Space>
     </Space>
   </Modal>
 </template>

@@ -14,10 +14,10 @@
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.39.4",
-    "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "~4.2.6",
     "codemirror": "^6.0.2",
     "localforage": "^1.10.0",
+    "naive-ui": "^2.43.2",
     "vue": "^3.4.21",
     "vue-codemirror": "^6.1.1"
   },

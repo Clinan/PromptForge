@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import { Button, Card, Col, Collapse, Input, InputNumber, Row, Space, Switch, Typography } from 'ant-design-vue';
 import type { SharedState, UserPromptPreset } from '../types';
 import { newId } from '../lib/id';
 import JsonEditor from './JsonEditor.vue';
-
-const { TextArea } = Input;
-const { Text: TypographyText, Title: TypographyTitle } = Typography;
-const CollapsePanel = Collapse.Panel;
 
 const props = defineProps<{
   shared: SharedState;
@@ -29,81 +24,83 @@ function removeUserPrompt(id: string) {
 </script>
 
 <template>
-  <Card size="small">
-    <Space direction="vertical" size="middle" style="width: 100%">
+  <section>
+    <div class="section-head">
       <div>
-        <TypographyTitle level="4" style="margin-bottom: 4px">全局设置</TypographyTitle>
-        <TypographyText type="secondary">User Prompts 将按顺序提交到 messages（位于 System Prompt 后）。</TypographyText>
+        <div class="section-title">全局设置</div>
+        <div class="section-subtitle">User Prompts 将按顺序提交到 messages（位于 System Prompt 后）。</div>
+      </div>
+    </div>
+    <div class="shared-grid">
+      <div class="shared-left">
+        <div class="flex-between" style="margin-bottom: 8px">
+          <label>User Prompts（按顺序追加）</label>
+          <button class="ghost" style="flex: 0 0 auto" @click="addUserPrompt">新增</button>
+        </div>
+        <div class="user-prompt-list">
+          <details v-for="(prompt, index) in props.shared.userPrompts" :key="prompt.id" class="collapse user-prompt-collapse">
+            <summary class="flex-between">
+              <div class="row" style="gap: 6px; flex: 0 1 auto">
+                <span>消息 {{ index + 1 }}</span>
+              </div>
+              <div class="small" style="flex: 0 0 auto">{{ prompt.text.length }} 字</div>
+            </summary>
+            <div style="margin-top: 10px">
+              <textarea v-model="prompt.text" placeholder="输入用户消息（User Prompt）" />
+              <div class="row user-prompt-actions" style="margin-top: 8px">
+                <button
+                  class="ghost"
+                  style="flex: 0 0 auto"
+                  @click="removeUserPrompt(prompt.id)"
+                  :disabled="props.shared.userPrompts.length === 1"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </details>
+        </div>
       </div>
 
-      <Space direction="vertical" size="small" style="width: 100%">
-        <Row align="middle" justify="space-between">
-          <Col flex="auto">
-            <TypographyText strong>User Prompts（按顺序追加）</TypographyText>
-          </Col>
-          <Col flex="0 0 auto">
-            <Button type="primary" @click="addUserPrompt">新增</Button>
-          </Col>
-        </Row>
-        <Collapse accordion>
-          <CollapsePanel v-for="(prompt, index) in props.shared.userPrompts" :key="prompt.id">
-            <template #header>
-              <Space align="center">
-                <TypographyText>消息 {{ index + 1 }}</TypographyText>
-                <TypographyText type="secondary">{{ prompt.text.length }} 字</TypographyText>
-              </Space>
-            </template>
-            <Space direction="vertical" size="small" style="width: 100%">
-              <TextArea v-model:value="prompt.text" placeholder="输入用户消息（User Prompt）" :auto-size="{ minRows: 3 }" />
-              <Button danger :disabled="props.shared.userPrompts.length === 1" @click="removeUserPrompt(prompt.id)">
-                删除
-              </Button>
-            </Space>
-          </CollapsePanel>
-        </Collapse>
-      </Space>
-
-      <Space direction="vertical" size="small" style="width: 100%">
-        <TypographyText strong>Tools 定义（JSON）</TypographyText>
-        <JsonEditor
-          id="tools"
-          class="tools-inline-editor"
-          v-model="props.shared.toolsDefinition"
-          placeholder='[{"name":"fetchDocs","description":"..."}]'
-        />
-      </Space>
-
-      <Space direction="vertical" size="small" style="width: 100%">
-        <TypographyText strong>默认参数</TypographyText>
-        <Space wrap>
-          <Space direction="vertical" size="small">
-            <TypographyText type="secondary">temperature</TypographyText>
-            <InputNumber v-model:value="props.shared.defaultParams.temperature" :step="0.1" />
-          </Space>
-          <Space direction="vertical" size="small">
-            <TypographyText type="secondary">top_p</TypographyText>
-            <InputNumber v-model:value="props.shared.defaultParams.top_p" :step="0.1" />
-          </Space>
-          <Space direction="vertical" size="small">
-            <TypographyText type="secondary">max_tokens</TypographyText>
-            <InputNumber v-model:value="props.shared.defaultParams.max_tokens" :step="1" />
-          </Space>
-        </Space>
-      </Space>
-
-      <Space direction="vertical" size="small">
-        <Space align="center" size="middle">
-          <Switch v-model:checked="props.shared.enableSuggestions" />
-          <TypographyText>启用联想</TypographyText>
-        </Space>
-        <Space align="center" size="middle">
-          <Switch v-model:checked="props.shared.streamOutput" />
-          <TypographyText>启用流式输出</TypographyText>
-        </Space>
-        <TypographyText type="secondary">
-          关闭流式输出时，将在完整响应返回后一次性展示内容，cURL 也会同步更新。
-        </TypographyText>
-      </Space>
-    </Space>
-  </Card>
+      <div class="shared-right">
+        <div>
+          <label for="tools">Tools 定义（JSON）</label>
+          <JsonEditor
+            id="tools"
+            class="tools-inline-editor"
+            v-model="props.shared.toolsDefinition"
+            placeholder='[{"name":"fetchDocs","description":"..."}]'
+          />
+        </div>
+        <div style="margin-top: 12px">
+          <label>默认参数</label>
+          <div class="param-grid">
+            <label class="param-field">
+              <span>temperature</span>
+              <input type="number" step="0.1" v-model.number="props.shared.defaultParams.temperature" />
+            </label>
+            <label class="param-field">
+              <span>top_p</span>
+              <input type="number" step="0.1" v-model.number="props.shared.defaultParams.top_p" />
+            </label>
+            <label class="param-field">
+              <span>max_tokens</span>
+              <input type="number" v-model.number="props.shared.defaultParams.max_tokens" />
+            </label>
+          </div>
+        </div>
+        <div class="shared-params-footer">
+          <label class="row shared-switch" style="gap: 6px">
+            <input type="checkbox" v-model="props.shared.enableSuggestions" />
+            启用联想
+          </label>
+          <label class="row shared-switch" style="gap: 6px">
+            <input type="checkbox" v-model="props.shared.streamOutput" />
+            启用流式输出
+          </label>
+          <div class="small">关闭流式输出时，将在完整响应返回后一次性展示内容，cURL 也会同步更新。</div>
+        </div>
+      </div>
+    </div>
+  </section>
 </template>
