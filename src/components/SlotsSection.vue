@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { Button, Col, Row, Space, Typography } from 'ant-design-vue';
+import { PauseOutlined, PlayCircleOutlined } from '@ant-design/icons-vue';
 import type { ProviderProfile, Slot, SharedState } from '../types';
 import SlotCard from './SlotCard.vue';
+
+const { Text: TypographyText, Title: TypographyTitle } = Typography;
 
 const props = defineProps<{
   slots: Slot[];
@@ -32,21 +36,35 @@ const selectedCount = computed(() => props.slots.filter((slot) => slot.selected)
 
 <template>
   <div class="slots-lab">
-    <div class="slots-lab__head">
-      <div>
-        <div class="panel-title">Slots Lab</div>
-        <div class="panel-subtitle">多模型并行运行的一站式调试区。</div>
-      </div>
-      <div class="slots-head__actions">
-        <div class="row gap-small">
-          <button class="ghost pill" :disabled="hasRunning || selectedCount === 0" @click="emit('runSelected')">
-            运行已选 Slot
-          </button>
-          <button class="pill" :disabled="hasRunning" @click="emit('runAll')">运行全部</button>
-          <button class="pill danger" :disabled="!hasRunning" @click="emit('stopAll')">停止全部</button>
-        </div>
-      </div>
-    </div>
+    <Space direction="vertical" size="middle" style="width: 100%">
+      <Row align="top" justify="space-between" :gutter="[12, 12]">
+        <Col flex="auto">
+          <TypographyTitle level="4" style="margin-bottom: 4px">Slots Lab</TypographyTitle>
+          <TypographyText type="secondary">多模型并行运行的一站式调试区。</TypographyText>
+        </Col>
+        <Col flex="0 0 auto">
+          <Space size="small" wrap>
+            <Button :disabled="hasRunning || selectedCount === 0" @click="emit('runSelected')">
+              <template #icon>
+                <PlayCircleOutlined />
+              </template>
+              运行已选 Slot
+            </Button>
+            <Button type="primary" :disabled="hasRunning" @click="emit('runAll')">
+              <template #icon>
+                <PlayCircleOutlined />
+              </template>
+              运行全部
+            </Button>
+            <Button danger :disabled="!hasRunning" @click="emit('stopAll')">
+              <template #icon>
+                <PauseOutlined />
+              </template>
+              停止全部
+            </Button>
+          </Space>
+        </Col>
+      </Row>
 
     <div class="slot-grid">
       <SlotCard
@@ -69,5 +87,6 @@ const selectedCount = computed(() => props.slots.filter((slot) => slot.selected)
         @refresh-models="emit('refreshModels', $event)"
       />
     </div>
+    </Space>
   </div>
 </template>

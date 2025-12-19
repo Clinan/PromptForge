@@ -99,9 +99,6 @@ const handleImportBeforeUpload: UploadProps['beforeUpload'] = (file) => {
   >
     <template #extra>
       <Space>
-        <Upload accept=".zip" :show-upload-list="false" :before-upload="handleImportBeforeUpload">
-          <Button type="link">导入（加密 zip）</Button>
-        </Upload>
         <Button type="link" @click="props.onExportProviders">导出（加密 zip）</Button>
         <Button type="link" danger @click="props.onClearKeys">清空所有密钥</Button>
       </Space>
@@ -113,6 +110,19 @@ const handleImportBeforeUpload: UploadProps['beforeUpload'] = (file) => {
       description="APIKey会以明文形式保存在本机浏览器的中"
       style="margin-bottom: 16px"
     />
+
+    <Upload.Dragger
+      accept=".zip"
+      :show-upload-list="false"
+      :before-upload="handleImportBeforeUpload"
+      style="margin-bottom: 16px"
+    >
+      <p class="ant-upload-drag-icon">
+        <span>📦</span>
+      </p>
+      <p class="ant-upload-text">拖拽加密的 Provider 配置 zip 到这里导入</p>
+      <p class="ant-upload-hint">也可点击选择文件</p>
+    </Upload.Dragger>
 
     <Form layout="vertical">
       <Row :gutter="[16, 0]">

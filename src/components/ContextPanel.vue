@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Button, Modal, Space } from 'ant-design-vue';
+import { Button, Card, Form, Input, InputNumber, Modal, Space, Switch, Tabs, Typography } from 'ant-design-vue';
 import type { SharedState } from '../types';
 import { newId } from '../lib/id';
 import JsonEditor from './JsonEditor.vue';
+
+const { Text: TypographyText, Title: TypographyTitle } = Typography;
+const FormItem = Form.Item;
 
 const props = defineProps<{
   shared: SharedState;
@@ -125,79 +128,70 @@ function closeToolsModal() {
 </script>
 
 <template>
-  <aside class="context-panel__shell card">
-    <div class="context-panel__head">
-      <div class="panel-title">Context Panel</div>
-      <div class="panel-subtitle">管理参数、工具、变量上下文。</div>
-    </div>
-    <div class="context-tabs">
-      <button
-        v-for="tab in ['parameters', 'tools', 'variables']"
-        :key="tab"
-        class="context-tab"
-        :class="{ active: tabProxy === tab }"
-        @click="tabProxy = tab as 'parameters' | 'tools' | 'variables'"
-      >
-        {{ tab === 'parameters' ? 'Parameters' : tab === 'tools' ? 'Tools' : 'Variables' }}
-      </button>
-    </div>
-
-    <div v-if="tabProxy === 'parameters'" class="context-panel__body">
-      <div class="param-banner">以下配置会同步应用到所有 Slots。</div>
-
-      <div class="form-grid">
-        <label>
-          <span>temperature</span>
-          <input type="number" step="0.1" v-model.number="props.shared.defaultParams.temperature" />
-        </label>
-        <label>
-          <span>top_p</span>
-          <input type="number" step="0.1" v-model.number="props.shared.defaultParams.top_p" />
-        </label>
-        <label>
-          <span>max_tokens</span>
-          <input type="number" v-model.number="props.shared.defaultParams.max_tokens" />
-        </label>
+  <Card size="small" class="context-panel">
+    <Space direction="vertical" size="middle" style="width: 100%">
+      <div>
+        <TypographyTitle level="4" style="margin-bottom: 4px">Context Panel</TypographyTitle>
+        <TypographyText type="secondary">管理参数、工具、变量上下文。</TypographyText>
       </div>
 
-      <div class="param-flags">
-        <label class="switch-row">
-          <input type="checkbox" v-model="props.shared.enableSuggestions" />
-          <span>启用联想建议</span>
-        </label>
-        <label class="switch-row">
-          <input type="checkbox" v-model="props.shared.streamOutput" />
-          <span>启用流式输出</span>
-        </label>
-        <label class="switch-row">
-          <input type="checkbox" v-model="showDiffProxy" />
-          <span>Show only diffs（仅展示不同参数）</span>
-        </label>
-      </div>
-    </div>
+      <Tabs v-model:activeKey="tabProxy" type="card">
+        <Tabs.TabPane key="parameters" tab="Parameters">
+          <Space direction="vertical" size="middle" style="width: 100%">
+            <TypographyText type="secondary">以下配置会同步应用到所有 Slots。</TypographyText>
+            <Form layout="vertical">
+              <FormItem label="temperature">
+                <InputNumber v-model:value="props.shared.defaultParams.temperature" :step="0.1" style="width: 100%" />
+              </FormItem>
+              <FormItem label="top_p">
+                <InputNumber v-model:value="props.shared.defaultParams.top_p" :step="0.1" style="width: 100%" />
+              </FormItem>
+              <FormItem label="max_tokens">
+                <InputNumber v-model:value="props.shared.defaultParams.max_tokens" :step="1" style="width: 100%" />
+              </FormItem>
+            </Form>
 
-    <div v-else-if="tabProxy === 'tools'" class="context-panel__body tools-tab">
-      <div class="sidebar-empty">Tools 配置在弹窗中维护 JSON 数组，关闭后可返回此处。</div>
-    </div>
+            <Space direction="vertical" size="small">
+              <Space align="center" size="middle">
+                <Switch v-model:checked="props.shared.enableSuggestions" />
+                <TypographyText>启用联想建议</TypographyText>
+              </Space>
+              <Space align="center" size="middle">
+                <Switch v-model:checked="props.shared.streamOutput" />
+                <TypographyText>启用流式输出</TypographyText>
+              </Space>
+              <Space align="center" size="middle">
+                <Switch v-model:checked="showDiffProxy" />
+                <TypographyText>Show only diffs（仅展示不同参数）</TypographyText>
+              </Space>
+            </Space>
+          </Space>
+        </Tabs.TabPane>
 
-    <div v-else class="context-panel__body">
-      <div class="variables-head">
-        <div>
-          <div class="panel-subtitle">Variables</div>
-          <div class="small-text">用于模板中的占位符</div>
-          <div class="small-text">
-            在 Prompt Composer 或 Slot 文本中使用 <code v-pre>{{ VARIABLE_NAME }}</code> 即可引用对应值。
+        <Tabs.TabPane key="tools" tab="Tools">
+          <TypographyText type="secondary">Tools 配置在弹窗中维护 JSON 数组，关闭后可返回此处。</TypographyText>
+          <div style="margin-top: 12px">
+            <Button type="primary" @click="showToolsModal = true">打开 Tools 配置</Button>
           </div>
-        </div>
-      </div>
-      <div class="variables-list">
-        <div v-for="variable in props.shared.variables" :key="variable.id" class="variable-row">
-          <input type="text" v-model="variable.key" placeholder="变量名，如 USER_NAME" />
-          <input type="text" v-model="variable.value" placeholder="示例值" />
-        </div>
-      </div>
-    </div>
-  </aside>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane key="variables" tab="Variables">
+          <Space direction="vertical" size="small" style="width: 100%">
+            <TypographyText type="secondary">用于模板中的占位符</TypographyText>
+            <TypographyText type="secondary">
+              在 Prompt Composer 或 Slot 文本中使用 <code v-pre>{{ VARIABLE_NAME }}</code> 即可引用对应值。
+            </TypographyText>
+            <Space direction="vertical" size="small" style="width: 100%">
+              <Space v-for="variable in props.shared.variables" :key="variable.id" style="width: 100%">
+                <Input v-model:value="variable.key" placeholder="变量名，如 USER_NAME" />
+                <Input v-model:value="variable.value" placeholder="示例值" />
+              </Space>
+            </Space>
+          </Space>
+        </Tabs.TabPane>
+      </Tabs>
+    </Space>
+  </Card>
 
   <Modal
     v-if="showToolsModal"
@@ -210,8 +204,10 @@ function closeToolsModal() {
   >
     <Space direction="vertical" style="width: 100%" size="middle">
       <div>
-        <div class="panel-subtitle">Tools JSON 数组</div>
-        <div class="small-text">请直接维护工具定义数组，示例：[{"name":"fetchDocs","description":"..."}]</div>
+        <TypographyText type="secondary">Tools JSON 数组</TypographyText>
+        <TypographyText type="secondary">
+          请直接维护工具定义数组，示例：[{"name":"fetchDocs","description":"..."}]
+        </TypographyText>
       </div>
       <Space>
         <Button @click="formatTools">Format JSON</Button>
@@ -225,8 +221,8 @@ function closeToolsModal() {
             placeholder='[{"name":"fetchDocs","description":"..."}]'
           />
         </div>
-        <div v-if="toolsError" class="form-hint error">{{ toolsError }}</div>
-        <div v-else-if="toolsSuccess" class="form-hint success">{{ toolsSuccess }}</div>
+        <TypographyText v-if="toolsError" type="danger">{{ toolsError }}</TypographyText>
+        <TypographyText v-else-if="toolsSuccess" type="success">{{ toolsSuccess }}</TypographyText>
       </div>
     </Space>
   </Modal>
