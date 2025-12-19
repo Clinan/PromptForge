@@ -244,12 +244,15 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
 
         const mapped = (list as any[])
           .map((item) => {
-            const id =
+            let id =
               (typeof item?.id === 'string' && item.id) ||
               (typeof item?.model_id === 'string' && item.model_id) ||
               (typeof item?.name === 'string' && item.name) ||
               '';
             if (!id) return null;
+            if (id.startsWith('models/')) {
+              id = id.slice('models/'.length);
+            }
             const desc =
               (typeof item?.description === 'string' && item.description) ||
               (typeof item?.display_name === 'string' && item.display_name) ||
@@ -350,12 +353,22 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
 export const plugins: Plugin[] = [
   createOpenAICompatiblePlugin({
     id: 'openai-compatible',
-    name: 'OpenAI-Compatible (Mock)',
+    name: 'OpenAI',
     defaultUrl: 'https://api.openai.com/v1/chat/completions',
     apiKeyPlaceholder: '{{OPENAI_API_KEY}}',
     fallbackModels: [
       { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
       { id: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo' }
+    ]
+  }),
+  createOpenAICompatiblePlugin({
+    id: 'Gemini',
+    name: 'Gemini',
+    defaultUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions',
+    apiKeyPlaceholder: '{{GEMINI_API_KEY}}',
+    defaultModelsUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/v1/models',
+    fallbackModels: [
+      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash' }
     ]
   }),
   createOpenAICompatiblePlugin({

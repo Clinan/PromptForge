@@ -108,9 +108,6 @@ export type SharedState = {
     temperature: number;
     top_p: number;
     max_tokens: number;
-    stop: string;
-    presence_penalty: number;
-    frequency_penalty: number;
   };
   enableSuggestions: boolean;
   streamOutput: boolean;

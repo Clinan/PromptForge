@@ -29,6 +29,11 @@ const editorStorageKey = 'truestprompt-editor-state-v1';
 const historyStore = localforage.createInstance({ name: 'truestprompt-history' });
 const modelCacheStore = localforage.createInstance({ name: 'truestprompt-model-cache' });
 const modelCacheTtlMs = 24 * 60 * 60 * 1000;
+const defaultSharedParams = {
+  temperature: 0.7,
+  top_p: 1,
+  max_tokens: 8192
+};
 
 const providerProfiles = ref<ProviderProfile[]>([]);
 const historyItems = ref<HistoryItem[]>([]);
@@ -36,8 +41,6 @@ const showHistory = ref(false);
 const showProviderManager = ref(false);
 const contextPanelTab = ref<'parameters' | 'tools' | 'variables'>('parameters');
 const showParamDiffOnly = ref(false);
-const slotViewMode = ref<'side-by-side' | 'diff' | 'score'>('side-by-side');
-const diffSelection = ref<string[]>([]);
 const themeStorageKey = 'truestprompt-theme';
 const theme = ref<'light' | 'dark'>('light');
 const useCurlPlaceholder = ref(true);
@@ -116,6 +119,7 @@ watch(
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
 const codeDialogCode = ref('');
+const codeDialogSlotId = ref<string | null>(null);
 
 const confirmDialogOpen = ref(false);
 const confirmDialogTitle = ref('');
@@ -189,6 +193,11 @@ function toggleTheme() {
   theme.value = theme.value === 'light' ? 'dark' : 'light';
 }
 
+function closeCodeDialog() {
+  codeDialogOpen.value = false;
+  codeDialogSlotId.value = null;
+}
+
 const initialUserPrompt: UserPromptPreset = {
   id: newId(),
   role: 'user',
@@ -199,14 +208,7 @@ const shared = reactive<SharedState>({
   userPrompts: [initialUserPrompt],
   toolsDefinition: '[{"name":"fetchDocs","description":"Query project docs"}]',
   variables: [{ id: newId(), key: '', value: '' }],
-  defaultParams: {
-    temperature: 0.7,
-    top_p: 1,
-    max_tokens: 8192,
-    stop: '',
-    presence_penalty: 0,
-    frequency_penalty: 0
-  },
+  defaultParams: { ...defaultSharedParams },
   enableSuggestions: true,
   streamOutput: true
 });
@@ -285,12 +287,9 @@ function loadEditorState() {
     }
     if (parsed.shared.defaultParams) {
       shared.defaultParams = {
-        temperature: Number(parsed.shared.defaultParams.temperature ?? shared.defaultParams.temperature),
-        top_p: Number(parsed.shared.defaultParams.top_p ?? shared.defaultParams.top_p),
-        max_tokens: Number(parsed.shared.defaultParams.max_tokens ?? shared.defaultParams.max_tokens),
-        stop: String(parsed.shared.defaultParams.stop ?? shared.defaultParams.stop),
-        presence_penalty: Number(parsed.shared.defaultParams.presence_penalty ?? shared.defaultParams.presence_penalty),
-        frequency_penalty: Number(parsed.shared.defaultParams.frequency_penalty ?? shared.defaultParams.frequency_penalty)
+        temperature: coerceNumber(parsed.shared.defaultParams.temperature, defaultSharedParams.temperature),
+        top_p: coerceNumber(parsed.shared.defaultParams.top_p, defaultSharedParams.top_p),
+        max_tokens: coerceNumber(parsed.shared.defaultParams.max_tokens, defaultSharedParams.max_tokens)
       };
     }
     if (typeof parsed.shared.enableSuggestions === 'boolean') shared.enableSuggestions = parsed.shared.enableSuggestions;
@@ -348,8 +347,26 @@ function removeEmptyEntries(obj: Record<string, unknown>) {
   return cleaned;
 }
 
+function coerceNumber(value: unknown, fallback: number) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const slots = ref<Slot[]>([]);
 const abortControllersBySlotId = new Map<string, AbortController>();
+
+watch(useCurlPlaceholder, () => {
+  if (!codeDialogOpen.value || !codeDialogSlotId.value) return;
+  const slot = slots.value.find((item) => item.id === codeDialogSlotId.value);
+  if (!slot) return;
+  const snippet = buildCurlSnippet(slot);
+  if (!snippet) return;
+  codeDialogTitle.value = snippet.title;
+  codeDialogCode.value = snippet.code;
+});
 
 const hasRunningSlots = computed(() => slots.value.some((slot) => slot.status === 'running'));
 
@@ -558,18 +575,6 @@ function requestRemoveSlot(slotId: string) {
 const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
 const recentHistory = computed(() => historyItems.value.slice(0, 5));
 
-function toggleDiffSelection(slotId: string) {
-  if (diffSelection.value.includes(slotId)) {
-    diffSelection.value = diffSelection.value.filter((id) => id !== slotId);
-    return;
-  }
-  if (diffSelection.value.length >= 2) {
-    diffSelection.value = [...diffSelection.value.slice(1), slotId];
-  } else {
-    diffSelection.value = [...diffSelection.value, slotId];
-  }
-}
-
 async function refreshModelsForSlot(slot: Slot) {
   await refreshModelsForSlotWithOptions(slot, {});
 }
@@ -716,18 +721,27 @@ function getPlugin(slot: Slot) {
   return plugins.find((p) => p.id === pluginId)!;
 }
 
-async function exportCurl(slot: Slot) {
+function buildCurlSnippet(slot: Slot): { title: string; code: string } | null {
   const plugin = getPlugin(slot);
   const profile = getProfile(slot);
-  if (!profile) {
+  if (!profile) return null;
+  const request = buildRequest(slot);
+  const maskedProfile = useCurlPlaceholder.value ? { ...profile, apiKey: '' } : profile;
+  return {
+    title: `cURL（${slot.modelId}）`,
+    code: plugin.buildCurl(maskedProfile, request)
+  };
+}
+
+async function exportCurl(slot: Slot) {
+  const snippet = buildCurlSnippet(slot);
+  if (!snippet) {
     alert('请选择 Provider Profile');
     return;
   }
-  const request = buildRequest(slot);
-  const maskedProfile = useCurlPlaceholder.value ? { ...profile, apiKey: '' } : profile;
-  const curl = plugin.buildCurl(maskedProfile, request);
-  codeDialogTitle.value = `cURL（${slot.modelId}）`;
-  codeDialogCode.value = curl;
+  codeDialogSlotId.value = slot.id;
+  codeDialogTitle.value = snippet.title;
+  codeDialogCode.value = snippet.code;
   codeDialogOpen.value = true;
 }
 
@@ -964,23 +978,6 @@ watch(
 );
 
 watch(
-  () => slotViewMode.value,
-  (mode) => {
-    if (mode !== 'diff') {
-      diffSelection.value = [];
-    }
-  }
-);
-
-watch(
-  () => slots.value.map((slot) => slot.id),
-  () => {
-    const allowed = new Set(slots.value.map((slot) => slot.id));
-    diffSelection.value = diffSelection.value.filter((id) => allowed.has(id));
-  }
-);
-
-watch(
   () => slots.value.map((slot) => `${slot.id}:${slot.pluginId}:${slot.providerProfileId}`),
   () => {
     slots.value.forEach((slot) => refreshModelsForSlot(slot));
@@ -1082,8 +1079,6 @@ watch(
                   :refreshingModelsBySlotId="refreshingModelsBySlotId"
                   :modelOptions="modelOptions"
                   :defaultParams="shared.defaultParams"
-                  :viewMode="slotViewMode"
-                  :diffSelection="diffSelection"
                   :showParamDiffOnly="showParamDiffOnly"
                   @copy="addSlot"
                   @remove="requestRemoveSlot"
@@ -1095,8 +1090,6 @@ watch(
                   @runSelected="runSelected"
                   @runAll="runAll"
                   @stopAll="stopAllSlots"
-                  @changeViewMode="slotViewMode = $event"
-                  @toggleDiff="toggleDiffSelection"
                 />
               </section>
             </main>
@@ -1207,7 +1200,7 @@ watch(
       :title="codeDialogTitle"
       :code="codeDialogCode"
       v-model:usePlaceholder="useCurlPlaceholder"
-      @close="codeDialogOpen = false"
+      @close="closeCodeDialog"
     />
 
     <ConfirmDialog

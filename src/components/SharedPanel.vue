@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SharedState, UserPromptPreset } from '../types';
 import { newId } from '../lib/id';
+import JsonEditor from './JsonEditor.vue';
 
 const props = defineProps<{
   shared: SharedState;
@@ -64,7 +65,12 @@ function removeUserPrompt(id: string) {
       <div class="shared-right">
         <div>
           <label for="tools">Tools 定义（JSON）</label>
-          <textarea id="tools" v-model="props.shared.toolsDefinition" placeholder='[{"name":"fetchDocs","description":"..."}]' />
+          <JsonEditor
+            id="tools"
+            class="tools-inline-editor"
+            v-model="props.shared.toolsDefinition"
+            placeholder='[{"name":"fetchDocs","description":"..."}]'
+          />
         </div>
         <div style="margin-top: 12px">
           <label>默认参数</label>
@@ -80,18 +86,6 @@ function removeUserPrompt(id: string) {
             <label class="param-field">
               <span>max_tokens</span>
               <input type="number" v-model.number="props.shared.defaultParams.max_tokens" />
-            </label>
-            <label class="param-field">
-              <span>stop</span>
-              <input type="text" v-model="props.shared.defaultParams.stop" />
-            </label>
-            <label class="param-field">
-              <span>presence_penalty</span>
-              <input type="number" step="0.1" v-model.number="props.shared.defaultParams.presence_penalty" />
-            </label>
-            <label class="param-field">
-              <span>frequency_penalty</span>
-              <input type="number" step="0.1" v-model.number="props.shared.defaultParams.frequency_penalty" />
             </label>
           </div>
         </div>

@@ -96,7 +96,7 @@
 
 * 全局默认参数（Shared Defaults）：
 
-  * temperature、top_p、max_tokens、stop、presence_penalty、frequency_penalty、seed（可选）
+  * temperature、top_p、max_tokens（可选）
 * Slot 覆盖参数（Override）：
 
   * 允许某个 Slot 覆盖默认参数（更利于对比）
@@ -238,8 +238,8 @@
 * Vue3 + TS + pnpm ✅
 * 组件库：
 
-  * 你提的 iView：Vue3 建议用 **View UI Plus**（iView 的 Vue3 分支思路）
-  * 或 Naive UI / Ant Design Vue（二选一也行）
+  * Ant Design Vue
+  * 
 * 编辑器：
 
   * System/User 用 Monaco/Codemirror（支持大文本与格式化）

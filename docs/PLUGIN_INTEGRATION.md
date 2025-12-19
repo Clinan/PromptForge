@@ -157,7 +157,7 @@ plugins.push(aliyunDashScope);
 
 | 插件 ID | 显示名称 | 默认 Base URL | 模型获取方式 | 鉴权方式 |
 | --- | --- | --- | --- | --- |
-| `openai-compatible` | OpenAI-Compatible (Mock) | `https://api.openai.com/v1/chat/completions` | 动态调用 `/v1/models`，失败回退到常用模型列表 | `Authorization: Bearer <API_KEY>` |
+| `openai-compatible` | OpenAI| `https://api.openai.com/v1/chat/completions` | 动态调用 `/v1/models`，失败回退到常用模型列表 | `Authorization: Bearer <API_KEY>` |
 | `aliyun-dashscope` | Aliyun DashScope (通义) | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | 动态调用 `/compatible-mode/v1/models`，失败回退到通义常用模型 | `Authorization: Bearer <API_KEY>` |
 | `kimi-moonshot` | Kimi (Moonshot) | `https://api.moonshot.cn/v1/chat/completions` | 动态调用 `/v1/models`，失败回退到 Kimi 常用模型 | `Authorization: Bearer <API_KEY>` |
 | `ark-bytedance` | 方舟 Ark (ByteDance) | `https://ark.cn-beijing.volces.com/api/v3/chat/completions` | 动态调用 `/api/v3/models`，失败回退到 Doubao 常用模型 | `Authorization: Bearer <API_KEY>` |

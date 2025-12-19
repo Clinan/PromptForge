@@ -1,6 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
+import {
+  Alert,
+  Button,
+  Col,
+  Drawer,
+  Form,
+  Input,
+  Row,
+  Select,
+  Space,
+  Table,
+  Typography,
+  Upload,
+} from 'ant-design-vue';
+import type { UploadProps } from 'ant-design-vue';
 import type { Plugin, ProviderProfile, ProviderProfileDraft } from '../types';
+
+const { Password: InputPassword } = Input;
+const { Title: TypographyTitle } = Typography;
+const FormItem = Form.Item;
 
 const props = defineProps<{
   plugins: Plugin[];
@@ -19,99 +38,138 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const importInputEl = ref<HTMLInputElement | null>(null);
+const pluginOptions = computed(() =>
+  props.plugins.map((plugin) => ({
+    label: plugin.name,
+    value: plugin.id,
+  }))
+);
 
-function triggerImport() {
-  importInputEl.value?.click();
-}
+const pluginLookup = computed(() =>
+  props.plugins.reduce<Record<string, string>>((acc, plugin) => {
+    acc[plugin.id] = plugin.name;
+    return acc;
+  }, {})
+);
 
-function onImportChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
-  if (!file) return;
-  props.onImportProviders(file);
-}
+const tableColumns = [
+  {
+    title: '名称',
+    dataIndex: 'name',
+    key: 'name',
+  },
+  {
+    title: '模型协议',
+    dataIndex: 'pluginId',
+    key: 'plugin',
+  },
+  {
+    title: 'Base URL',
+    dataIndex: 'baseUrl',
+    key: 'baseUrl',
+  },
+  {
+    title: '操作',
+    key: 'actions',
+  },
+];
+
+const tableLocale = {
+  emptyText: '暂无 Provider，请先添加。',
+};
+
+const handleImportBeforeUpload: UploadProps['beforeUpload'] = (file) => {
+  const realFile = file.originFileObj ?? (file as unknown as File);
+  if (realFile) {
+    props.onImportProviders(realFile);
+  }
+  return false;
+};
 </script>
 
 <template>
-  <div class="provider-panel">
-    <div class="provider-panel__content">
-      <div class="flex-between provider-panel__head">
-        <h3>Provider 管理</h3>
-        <div class="row provider-panel__head-actions">
-          <input ref="importInputEl" type="file" accept=".zip" style="display: none" @change="onImportChange" />
-          <button class="ghost" style="flex: 0 0 auto" @click="triggerImport">导入（加密 zip）</button>
-          <button class="ghost" style="flex: 0 0 auto" @click="props.onExportProviders">导出（加密 zip）</button>
-          <button class="ghost" style="flex: 0 0 auto" @click="props.onClearKeys">清空所有密钥</button>
-          <button class="ghost" style="flex: 0 0 auto" @click="emit('close')">关闭</button>
-        </div>
-      </div>
+  <Drawer
+    :open="true"
+    title="Provider 管理"
+    placement="right"
+    :width="640"
+    :maskClosable="true"
+    @close="emit('close')"
+    :footer-style="{ textAlign: 'right' }"
+  >
+    <template #extra>
+      <Space>
+        <Upload accept=".zip" :show-upload-list="false" :before-upload="handleImportBeforeUpload">
+          <Button type="link">导入（加密 zip）</Button>
+        </Upload>
+        <Button type="link" @click="props.onExportProviders">导出（加密 zip）</Button>
+        <Button type="link" danger @click="props.onClearKeys">清空所有密钥</Button>
+      </Space>
+    </template>
 
-      <div class="provider-panel__hint small-text">
-        提示：API Key 会以明文形式保存在本机浏览器的 localStorage 中；请避免在不可信环境使用，并建议定期清空。
-      </div>
+    <Alert
+      type="info"
+      show-icon
+      description="APIKey会以明文形式保存在本机浏览器的中"
+      style="margin-bottom: 16px"
+    />
 
-      <div class="provider-form">
-        <div class="row">
-          <div>
-            <label>名称</label>
-            <input v-model="props.newProfile.name" placeholder="如：OpenAI 生产环境" />
-          </div>
-          <div>
-            <label>模型协议</label>
-            <select v-model="props.newProfile.pluginId">
-              <option v-for="plugin in props.plugins" :key="plugin.id" :value="plugin.id">
-                {{ plugin.name }}
-              </option>
-            </select>
-          </div>
-        </div>
+    <Form layout="vertical">
+      <Row :gutter="[16, 0]">
+        <Col :span="12">
+          <FormItem label="名称">
+            <Input v-model:value="props.newProfile.name" placeholder="如：OpenAI 生产环境" />
+          </FormItem>
+        </Col>
+        <Col :span="12">
+          <FormItem label="模型协议">
+            <Select v-model:value="props.newProfile.pluginId" :options="pluginOptions" placeholder="选择模型协议" />
+          </FormItem>
+        </Col>
+      </Row>
 
-        <div class="row">
-          <div>
-            <label>Base URL</label>
-            <input v-model="props.newProfile.baseUrl" :placeholder="props.defaultProviderTemplate" title="未填写则使用默认值" />
-          </div>
-          <div>
-            <label>API Key</label>
-            <input v-model="props.newProfile.apiKey" type="password" autocomplete="off" placeholder="存储在本地" />
-          </div>
-        </div>
+      <Row :gutter="[16, 0]">
+        <Col :span="12">
+          <FormItem label="Base URL">
+            <Input v-model:value="props.newProfile.baseUrl" :placeholder="props.defaultProviderTemplate" title="未填写则使用默认值" />
+          </FormItem>
+        </Col>
+        <Col :span="12">
+          <FormItem label="API Key">
+            <InputPassword v-model:value="props.newProfile.apiKey" autocomplete="off" placeholder="存储在本地" />
+          </FormItem>
+        </Col>
+      </Row>
 
-        <div class="flex-between" style="margin-top: 8px">
-          <div class="row" style="width: 240px">
-            <button class="ghost" @click="props.onResetNewProfile">重置</button>
-            <button @click="props.onAddProfile">添加 Provider</button>
-          </div>
-        </div>
-      </div>
+      <FormItem>
+        <Space>
+          <Button @click="props.onResetNewProfile">重置</Button>
+          <Button type="primary" @click="props.onAddProfile">添加 Provider</Button>
+        </Space>
+      </FormItem>
+    </Form>
 
-      <div class="table-wrapper">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>名称</th>
-              <th>模型协议</th>
-              <th>Base URL</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!props.providerProfiles.length">
-              <td colspan="4">暂无 Provider，请先添加。</td>
-            </tr>
-            <tr v-for="profile in props.providerProfiles" :key="profile.id">
-              <td>{{ profile.name }}</td>
-              <td>{{ props.plugins.find((p) => p.id === profile.pluginId)?.name || '未知模型协议' }}</td>
-              <td>{{ profile.baseUrl }}</td>
-              <td>
-                <button class="ghost" @click="props.onRemoveProfile(profile.id)">删除</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+    <Table
+      :columns="tableColumns"
+      :data-source="props.providerProfiles"
+      row-key="id"
+      size="middle"
+      :scroll="{ y: 280 }"
+      :pagination="false"
+      :locale="tableLocale"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'plugin'">
+          {{ pluginLookup[record.pluginId] || '未知模型协议' }}
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <Button type="link" danger size="small" @click="props.onRemoveProfile(record.id)">删除</Button>
+        </template>
+      </template>
+    </Table>
+
+    <template #footer>
+      <Button type="primary" @click="emit('close')">关闭</Button>
+    </template>
+  </Drawer>
 </template>

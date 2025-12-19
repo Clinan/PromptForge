@@ -1,94 +1,56 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { Codemirror } from 'vue-codemirror';
+import { json } from '@codemirror/lang-json';
+import { javascript } from '@codemirror/lang-javascript';
+import { EditorView } from '@codemirror/view';
+import type { Extension } from '@codemirror/state';
 
 const props = defineProps<{
   modelValue: string;
   placeholder?: string;
   readonly?: boolean;
+  language?: 'json' | 'javascript' | 'text';
 }>();
 
 const emit = defineEmits<{
   'update:modelValue': [string];
 }>();
 
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
-const scrollTop = ref(0);
-const scrollLeft = ref(0);
+const currentValue = computed(() => props.modelValue ?? '');
 
-const highlighted = computed(() => highlightJSON(props.modelValue ?? ''));
+const extensions = computed<Extension[]>(() => {
+  const base: Extension[] = [EditorView.lineWrapping];
+  switch (props.language) {
+    case 'javascript':
+      base.push(javascript());
+      break;
+    case 'text':
+      break;
+    default:
+      base.push(json());
+      break;
+  }
+  return base;
+});
 
-function handleInput(event: Event) {
+function handleUpdate(value: string) {
   if (props.readonly) return;
-  const value = (event.target as HTMLTextAreaElement).value;
   emit('update:modelValue', value);
-  syncScroll();
-}
-
-function syncScroll() {
-  const el = textareaRef.value;
-  if (!el) return;
-  scrollTop.value = el.scrollTop;
-  scrollLeft.value = el.scrollLeft;
-}
-
-function highlightJSON(source: string) {
-  if (!source) return '';
-  const pattern =
-    /("(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
-  let html = '';
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(source))) {
-    const start = match.index;
-    html += escapeHtml(source.slice(lastIndex, start));
-    const token = match[0];
-    html += `<span class="${classForToken(token)}">${escapeHtml(token)}</span>`;
-    lastIndex = pattern.lastIndex;
-  }
-  html += escapeHtml(source.slice(lastIndex));
-  return html || '&nbsp;';
-}
-
-function classForToken(token: string) {
-  if (token.startsWith('"')) {
-    return token.trimEnd().endsWith(':') ? 'json-key' : 'json-string';
-  }
-  if (token === 'true' || token === 'false') return 'json-boolean';
-  if (token === 'null') return 'json-null';
-  return 'json-number';
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 </script>
 
 <template>
   <div class="json-editor" :class="{ readonly: props.readonly }">
-    <template v-if="props.readonly">
-      <pre class="json-editor__highlight json-editor__highlight--static"><code v-html="highlighted"></code></pre>
-    </template>
-    <template v-else>
-      <pre
-        class="json-editor__highlight"
-        aria-hidden="true"
-        :style="{ transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }"
-      ><code v-html="highlighted"></code></pre>
-      <textarea
-        ref="textareaRef"
-        class="json-editor__textarea"
-        :value="modelValue"
-        :placeholder="placeholder"
-        spellcheck="false"
-        @input="handleInput"
-        @scroll="syncScroll"
-      ></textarea>
-      <div v-if="!modelValue && placeholder" class="json-editor__placeholder">{{ placeholder }}</div>
-    </template>
+    <Codemirror
+      :model-value="currentValue"
+      :extensions="extensions"
+      :disabled="props.readonly"
+      :placeholder="props.placeholder"
+      :indent-with-tab="true"
+      :tab-size="2"
+      :style="{ height: '100%' }"
+      @update:modelValue="handleUpdate"
+    />
   </div>
 </template>

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { Button, Collapse, Drawer, Empty, Input, Space, Tag, Typography } from 'ant-design-vue';
 import type { HistoryItem } from '../types';
+
+const { Search: InputSearch } = Input;
+const { Paragraph: TypographyParagraph } = Typography;
+const CollapsePanel = Collapse.Panel;
 
 const props = defineProps<{
   items: HistoryItem[];
@@ -13,7 +18,7 @@ const emit = defineEmits<{
 }>();
 
 const query = ref('');
-const activeId = ref<string | null>(null);
+const activeId = ref<string | undefined>();
 
 function displayMessages(item: HistoryItem) {
   const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt || '';
@@ -45,7 +50,7 @@ watch(
   filtered,
   (list) => {
     if (!list.length) {
-      activeId.value = null;
+      activeId.value = undefined;
       return;
     }
     if (!activeId.value || !list.some((item) => item.id === activeId.value)) {
@@ -57,56 +62,57 @@ watch(
 </script>
 
 <template>
-  <div class="history-drawer">
-    <div class="history-mask" @click="emit('close')"></div>
-    <section class="history-drawer__content">
-      <div class="flex-between">
-        <div>
-          <h3 style="margin: 0">历史记录</h3>
-        </div>
-        <div class="row" style="width: 420px">
-          <input v-model="query" placeholder="搜索 system/user prompt" />
-          <button class="ghost" @click="emit('close')">关闭</button>
-        </div>
-      </div>
+  <Drawer
+    :open="true"
+    title="历史记录"
+    placement="right"
+    :width="720"
+    @close="emit('close')"
+    :body-style="{ paddingBottom: '24px' }"
+  >
+    <Space direction="vertical" style="width: 100%" size="large">
+      <InputSearch v-model:value="query" placeholder="搜索 system/user prompt" allow-clear />
 
-      <div class="history-collapse-list">
-        <details
-          v-for="item in filtered"
-          :key="item.id"
-          class="collapse history-collapse"
-          :open="activeId === item.id"
-        >
-          <summary class="history-collapse__summary" @click.prevent="activeId = item.id">
-            <div class="history-meta">
-              <div class="history-meta__title">{{ item.title }}</div>
-              <div class="history-meta__info">
+      <Collapse
+        v-if="filtered.length"
+        v-model:activeKey="activeId"
+        accordion
+        bordered
+        style="background: transparent"
+      >
+        <CollapsePanel v-for="item in filtered" :key="item.id">
+          <template #header>
+            <div>
+              <div style="font-weight: 600; margin-bottom: 6px">{{ item.title }}</div>
+              <div style="font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap">
                 <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
                 <span>模型：{{ item.requestSnapshot.modelId }}</span>
                 <span>温度：{{ item.requestSnapshot.params?.temperature ?? '默认' }}</span>
               </div>
             </div>
-          </summary>
-            <div class="history-collapse__body">
-              <div class="row" style="flex-wrap: wrap; gap: 6px; align-items: center">
-              <span class="chip">首包 {{ item.responseSnapshot.metrics.ttfbMs?.toFixed(0) ?? '-' }} ms</span>
-              <span class="chip">总耗时 {{ item.responseSnapshot.metrics.totalMs?.toFixed(0) ?? '-' }} ms</span>
-              <span class="chip">Tokens {{ item.responseSnapshot.usage?.total ?? '-' }}</span>
-              <span v-if="(item.responseSnapshot.toolCalls?.length || 0) > 0" class="chip">
+          </template>
+
+          <Space direction="vertical" style="width: 100%" size="small">
+            <Space wrap size="small">
+              <Tag>首包 {{ item.responseSnapshot.metrics.ttfbMs?.toFixed(0) ?? '-' }} ms</Tag>
+              <Tag>总耗时 {{ item.responseSnapshot.metrics.totalMs?.toFixed(0) ?? '-' }} ms</Tag>
+              <Tag>Tokens {{ item.responseSnapshot.usage?.total ?? '-' }}</Tag>
+              <Tag v-if="(item.responseSnapshot.toolCalls?.length || 0) > 0">
                 Tool Calls {{ item.responseSnapshot.toolCalls?.length || 0 }}
-              </span>
-              <button class="ghost" style="flex: 0 0 auto" @click="emit('load', item)">载入</button>
-              <button class="ghost" style="flex: 0 0 auto" @click="emit('toggleStar', item.id)">
-                {{ item.star ? 'Unstar' : 'Star' }}
-              </button>
-            </div>
-            <div class="small" style="margin-top: 8px; white-space: pre-wrap">
+              </Tag>
+            </Space>
+            <Space>
+              <Button size="small" type="primary" @click="emit('load', item)">载入</Button>
+              <Button size="small" @click="emit('toggleStar', item.id)">{{ item.star ? 'Unstar' : 'Star' }}</Button>
+            </Space>
+            <TypographyParagraph style="margin-bottom: 0; white-space: pre-wrap">
               {{ displayMessages(item) }}
-            </div>
-            <div class="output-box" style="margin-top: 8px">{{ item.responseSnapshot.outputText }}</div>
-          </div>
-        </details>
-      </div>
-    </section>
-  </div>
+            </TypographyParagraph>
+            <TypographyParagraph code style="white-space: pre-wrap">{{ item.responseSnapshot.outputText }}</TypographyParagraph>
+          </Space>
+        </CollapsePanel>
+      </Collapse>
+      <Empty v-else description="暂无历史记录" />
+    </Space>
+  </Drawer>
 </template>

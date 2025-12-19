@@ -12,9 +12,6 @@ const props = defineProps<{
   disableRemove: boolean;
   defaultParams: SharedState['defaultParams'];
   showParamDiffOnly: boolean;
-  viewMode: 'side-by-side' | 'diff' | 'score';
-  diffSelected: boolean;
-  diffSelectable: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -25,7 +22,6 @@ const emit = defineEmits<{
   exportCurl: [slot: Slot];
   providerChange: [slot: Slot];
   refreshModels: [slot: Slot];
-  toggleDiff: [slotId: string];
 }>();
 
 const showModelSuggestions = ref(false);
@@ -93,6 +89,10 @@ const paramChips = computed(() =>
     .filter((chip) => (props.showParamDiffOnly ? chip.isDiff : true))
 );
 
+const advancedJsonValue = computed(() =>
+  props.slot.paramOverride ? JSON.stringify(props.slot.paramOverride, null, 2) : ''
+);
+
 const toolCallView = ref<'json' | 'raw'>('raw');
 
 function parseArguments(value: unknown) {
@@ -103,6 +103,18 @@ function parseArguments(value: unknown) {
     return JSON.parse(trimmed);
   } catch {
     return value;
+  }
+}
+
+function updateAdvancedJson(value: string) {
+  if (!value.trim()) {
+    props.slot.paramOverride = null;
+    return;
+  }
+  try {
+    props.slot.paramOverride = JSON.parse(value);
+  } catch (err) {
+    alert('JSON 解析失败，请检查格式');
   }
 }
 
@@ -139,11 +151,6 @@ const tokensSummary = computed(() => {
   if (prompt === '-' && completion === '-' && total === '-') return '';
   return `${prompt}/${completion}/${total}`;
 });
-
-function toggleDiffSelection() {
-  if (!props.diffSelectable) return;
-  emit('toggleDiff', props.slot.id);
-}
 
 watch(
   () => props.slot.status,
@@ -200,14 +207,6 @@ watch(
           <button class="ghost pill" type="button" @click="emit('exportCurl', props.slot)">导出 cURL</button>
         </div>
         <div class="slot-head-actions__group">
-          <button
-            v-if="props.diffSelectable"
-            class="ghost pill"
-            :class="{ active: props.diffSelected }"
-            @click="toggleDiffSelection"
-          >
-            {{ props.diffSelected ? '已选中对比' : '加入对比' }}
-          </button>
           <button class="ghost pill" type="button" @click="emit('copy', props.slot)">复制 Slot</button>
           <button
             class="ghost pill danger"
@@ -312,52 +311,13 @@ watch(
               @input="(e: Event) => setParamOverride(props.slot, 'max_tokens', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
             />
           </label>
-          <label class="param-field">
-            <span>stop</span>
-            <input
-              type="text"
-              :value="(props.slot.paramOverride?.stop as string | undefined) ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'stop', (e.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="param-field">
-            <span>presence_penalty</span>
-            <input
-              type="number"
-              step="0.1"
-              :value="props.slot.paramOverride?.presence_penalty ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'presence_penalty', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
-            />
-          </label>
-          <label class="param-field">
-            <span>frequency_penalty</span>
-            <input
-              type="number"
-              step="0.1"
-              :value="props.slot.paramOverride?.frequency_penalty ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'frequency_penalty', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
-            />
-          </label>
         </div>
         <label>高级 JSON（补充/覆盖其他参数）</label>
-        <textarea
-          :value="props.slot.paramOverride ? JSON.stringify(props.slot.paramOverride, null, 2) : ''"
-          placeholder='{\"temperature\":0.2}'
-          @input="(e: Event) => {
-            const value = (e.target as HTMLTextAreaElement).value;
-            if (!value.trim()) {
-              props.slot.paramOverride = null;
-              return;
-            }
-            try {
-              props.slot.paramOverride = JSON.parse(value);
-            } catch (err) {
-              alert('JSON 解析失败，请检查格式');
-            }
-          }"
+        <JsonEditor
+          class="slot-advanced-json"
+          :modelValue="advancedJsonValue"
+          placeholder='{"temperature":0.2}'
+          @update:modelValue="updateAdvancedJson"
         />
       </div>
     </details>
