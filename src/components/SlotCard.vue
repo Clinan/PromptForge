@@ -1,7 +1,38 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import {
+  AutoComplete,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Collapse,
+  Divider,
+  Empty,
+  Input,
+  InputNumber,
+  Col,
+  Radio,
+  Row,
+  Select,
+  Space,
+  Tag,
+  Typography
+} from 'ant-design-vue';
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined
+} from '@ant-design/icons-vue';
 import type { ProviderProfile, Slot, SharedState, ToolCall } from '../types';
 import JsonEditor from './JsonEditor.vue';
+
+const { TextArea } = Input;
+const { Text: TypographyText } = Typography;
+const CollapsePanel = Collapse.Panel;
 
 const props = defineProps<{
   slot: Slot;
@@ -24,8 +55,20 @@ const emit = defineEmits<{
   refreshModels: [slot: Slot];
 }>();
 
-const showModelSuggestions = ref(false);
-let hideModelSuggestionsTimer: number | null = null;
+const statusBadge = computed(() => {
+  switch (props.slot.status) {
+    case 'running':
+      return 'processing';
+    case 'done':
+      return 'success';
+    case 'error':
+      return 'error';
+    case 'canceled':
+      return 'warning';
+    default:
+      return 'default';
+  }
+});
 
 const modelSuggestions = computed(() => {
   const rawQuery = (props.slot.modelId || '').trim().toLowerCase();
@@ -42,24 +85,12 @@ const modelSuggestions = computed(() => {
   return results;
 });
 
-function openModelSuggestions() {
-  if (hideModelSuggestionsTimer !== null) {
-    window.clearTimeout(hideModelSuggestionsTimer);
-    hideModelSuggestionsTimer = null;
-  }
-  showModelSuggestions.value = true;
-}
-
-function closeModelSuggestionsLater() {
-  hideModelSuggestionsTimer = window.setTimeout(() => {
-    showModelSuggestions.value = false;
-  }, 120);
-}
-
-function chooseModel(id: string) {
-  props.slot.modelId = id;
-  showModelSuggestions.value = false;
-}
+const modelAutocompleteOptions = computed(() =>
+  modelSuggestions.value.map((model) => ({
+    value: model.id,
+    label: model.label === model.id ? model.id : `${model.id} (${model.label})`
+  }))
+);
 
 function setParamOverride(slot: Slot, key: string, value: unknown) {
   if (value === '' || value === null || value === undefined || (typeof value === 'number' && Number.isNaN(value))) {
@@ -174,192 +205,184 @@ watch(
 </script>
 
 <template>
-  <article class="slot-card" :data-status="props.slot.status">
-    <div v-if="props.slot.status === 'running'" class="slot-card__progress"></div>
-    <header class="slot-card__head">
-      <div class="slot-card__status">
-        <label class="slot-select">
-          <input type="checkbox" v-model="props.slot.selected" />
-        </label>
-        <span class="status-dot" :data-status="props.slot.status"></span>
-        <span class="slot-title">{{ props.slot.modelId || '未选择模型' }}</span>
-      </div>
-      <div class="slot-card__head-actions">
-        <div class="slot-head-actions__group">
-          <button
-            v-if="props.slot.status === 'running'"
-            class="pill danger"
-            type="button"
-            @click="emit('stop', props.slot.id)"
-            title="停止运行"
-          >
-            停止
-          </button>
-          <button
-            v-else
-            class="pill"
-            type="button"
-            @click="emit('run', props.slot)"
-            title="运行 Slot"
-          >
-            运行
-          </button>
-          <button class="ghost pill" type="button" @click="emit('exportCurl', props.slot)">导出 cURL</button>
-        </div>
-        <div class="slot-head-actions__group">
-          <button class="ghost pill" type="button" @click="emit('copy', props.slot)">复制 Slot</button>
-          <button
-            class="ghost pill danger"
-            type="button"
-            @click="emit('remove', props.slot.id)"
-            :disabled="props.disableRemove"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </header>
+  <Card size="small" class="slot-card" :bordered="true">
+    <template #title>
+      <Space align="center" size="middle">
+        <Checkbox v-model:checked="props.slot.selected" />
+        <Badge :status="statusBadge" />
+        <TypographyText strong>{{ props.slot.modelId || '未选择模型' }}</TypographyText>
+      </Space>
+    </template>
+    <template #extra>
+      <Space size="small" wrap>
+        <Button
+          v-if="props.slot.status === 'running'"
+          danger
+          size="small"
+          @click="emit('stop', props.slot.id)"
+        >
+          <template #icon>
+            <PauseCircleOutlined />
+          </template>
+          停止
+        </Button>
+        <Button v-else type="primary" size="small" @click="emit('run', props.slot)">
+          <template #icon>
+            <PlayCircleOutlined />
+          </template>
+          运行
+        </Button>
+        <Button size="small" @click="emit('exportCurl', props.slot)">
+          <template #icon>
+            <DownloadOutlined />
+          </template>
+          导出 cURL
+        </Button>
+        <Button size="small" @click="emit('copy', props.slot)">
+          <template #icon>
+            <CopyOutlined />
+          </template>
+          复制
+        </Button>
+        <Button size="small" danger :disabled="props.disableRemove" @click="emit('remove', props.slot.id)">
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          删除
+        </Button>
+      </Space>
+    </template>
 
-    <div class="slot-form">
-      <label>
-        <span>Provider</span>
-        <select v-model="props.slot.providerProfileId" @change="emit('providerChange', props.slot)">
-          <option :value="null">未选择</option>
-          <option v-for="profile in props.providerProfiles" :key="profile.id" :value="profile.id">
-            {{ profile.name }}
-          </option>
-        </select>
-      </label>
-      <label>
-        <span>Model</span>
-        <div class="model-picker">
-          <div class="model-suggest-wrap">
-            <input
-              v-model="props.slot.modelId"
-              placeholder="前缀搜索 / 输入模型 ID"
-              autocapitalize="off"
-              autocomplete="off"
-              spellcheck="false"
-              @focus="openModelSuggestions"
-              @input="openModelSuggestions"
-              @blur="closeModelSuggestionsLater"
-            />
-            <div v-if="showModelSuggestions && modelSuggestions.length" class="model-suggest">
-              <button
-                v-for="model in modelSuggestions"
-                :key="model.id"
-                type="button"
-                class="model-suggest__item"
-                @mousedown.prevent
-                @click="chooseModel(model.id)"
-              >
-                <span class="model-suggest__id">{{ model.id }}</span>
-                <span v-if="model.label !== model.id" class="model-suggest__label">{{ model.label }}</span>
-              </button>
-            </div>
-          </div>
-          <button
-            class="ghost icon-button"
-            :disabled="props.refreshingModels"
-            :title="props.refreshingModels ? '刷新中...' : '刷新模型缓存（缓存 1 天）'"
-            @click="emit('refreshModels', props.slot)"
-          >
-            ⟳
-          </button>
-        </div>
-      </label>
-    </div>
-
-    <div class="param-chips">
-      <span v-for="chip in paramChips" :key="chip.key" class="chip" :class="{ muted: !chip.isDiff }">
-        {{ chip.key }}: {{ chip.value }}
-      </span>
-      <span v-if="!paramChips.length" class="chip muted">继承默认参数</span>
-    </div>
-
-    <details class="slot-collapse">
-      <summary>参数覆盖</summary>
-      <div class="param-editor">
-        <div class="param-grid">
-          <label class="param-field">
-            <span>temperature</span>
-            <input
-              type="number"
-              step="0.1"
-              :value="props.slot.paramOverride?.temperature ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'temperature', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
-            />
-          </label>
-          <label class="param-field">
-            <span>top_p</span>
-            <input
-              type="number"
-              step="0.1"
-              :value="props.slot.paramOverride?.top_p ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'top_p', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
-            />
-          </label>
-          <label class="param-field">
-            <span>max_tokens</span>
-            <input
-              type="number"
-              step="1"
-              :value="props.slot.paramOverride?.max_tokens ?? ''"
-              placeholder="继承默认"
-              @input="(e: Event) => setParamOverride(props.slot, 'max_tokens', (e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))"
-            />
-          </label>
-        </div>
-        <label>高级 JSON（补充/覆盖其他参数）</label>
-        <JsonEditor
-          class="slot-advanced-json"
-          :modelValue="advancedJsonValue"
-          placeholder='{"temperature":0.2}'
-          @update:modelValue="updateAdvancedJson"
+    <Space direction="vertical" size="middle" style="width: 100%">
+      <Space direction="vertical" size="small" style="width: 100%">
+        <TypographyText type="secondary">Provider</TypographyText>
+        <Select
+          v-model:value="props.slot.providerProfileId"
+          placeholder="选择 Provider"
+          @change="emit('providerChange', props.slot)"
+          :options="[
+            { label: '未选择', value: null },
+            ...props.providerProfiles.map((profile) => ({ label: profile.name, value: profile.id }))
+          ]"
         />
-      </div>
-    </details>
-    
-    <label class="system-field">
-      <span>System Prompt</span>
-      <textarea v-model="props.slot.systemPrompt" placeholder="为该 Slot 定义 System Prompt" />
-    </label>
+      </Space>
 
+      <Space direction="vertical" size="small" style="width: 100%">
+        <Row align="middle" justify="space-between">
+          <Col flex="auto">
+            <TypographyText type="secondary">Model</TypographyText>
+          </Col>
+          <Col flex="0 0 auto">
+            <Button
+              size="small"
+              :loading="props.refreshingModels"
+              @click="emit('refreshModels', props.slot)"
+            >
+              <template #icon>
+                <ReloadOutlined />
+              </template>
+              刷新模型
+            </Button>
+          </Col>
+        </Row>
+        <AutoComplete
+          v-model:value="props.slot.modelId"
+          :options="modelAutocompleteOptions"
+          placeholder="前缀搜索 / 输入模型 ID"
+        />
+      </Space>
 
-    <div class="slot-output">
-      <div class="slot-output__head">
-        <span>输出 ({{ props.streamOutput ? '流式' : '非流式' }})</span>
-        <div class="slot-metrics">
-          <span class="chip">TTFB {{ props.slot.metrics.ttfbMs ? `${props.slot.metrics.ttfbMs.toFixed(0)} ms` : '-' }}</span>
-          <span class="chip">耗时 {{ props.slot.metrics.totalMs ? `${props.slot.metrics.totalMs.toFixed(0)} ms` : '-' }}</span>
-          <span v-if="tokensSummary" class="chip">Tokens {{ tokensSummary }}</span>
-        </div>
-      </div>
-      <pre class="slot-output__body">{{ props.slot.output || '等待运行...' }}</pre>
-    </div>
+      <Space wrap>
+        <Tag v-for="chip in paramChips" :key="chip.key" :color="chip.isDiff ? 'blue' : undefined">
+          {{ chip.key }}: {{ chip.value }}
+        </Tag>
+        <Tag v-if="!paramChips.length">继承默认参数</Tag>
+      </Space>
 
-    <div v-if="shouldShowToolCalls" class="slot-toolcalls">
-      <div class="slot-output__head">
-        <span>Tool Calls</span>
-        <div class="slot-toolcalls__toggle">
-          <button :class="{ active: toolCallView === 'json' }" :disabled="!parsedToolCalls.length" @click="toolCallView = 'json'">
-            JSON
-          </button>
-          <button :class="{ active: toolCallView === 'raw' }" @click="toolCallView = 'raw'">Raw Text</button>
-        </div>
-      </div>
-      <JsonEditor
-        v-if="toolCallView === 'json' && parsedToolCalls.length"
-        class="slot-toolcalls__editor"
-        :modelValue="toolCallsJson"
-        readonly
-      />
-      <div v-else-if="toolCallView === 'json'" class="slot-toolcalls__empty">暂无工具调用数据</div>
-      <pre v-else class="slot-toolcalls__raw">{{ toolCallsRawText || '等待工具调用流...' }}</pre>
-    </div>
+      <Collapse>
+        <CollapsePanel key="params" header="参数覆盖">
+          <Space direction="vertical" size="small" style="width: 100%">
+            <Space wrap>
+              <Space direction="vertical" size="small">
+                <TypographyText type="secondary">temperature</TypographyText>
+                <InputNumber
+                  :value="props.slot.paramOverride?.temperature ?? ''"
+                  :step="0.1"
+                  placeholder="继承默认"
+                  @update:value="(val) => setParamOverride(props.slot, 'temperature', val)"
+                />
+              </Space>
+              <Space direction="vertical" size="small">
+                <TypographyText type="secondary">top_p</TypographyText>
+                <InputNumber
+                  :value="props.slot.paramOverride?.top_p ?? ''"
+                  :step="0.1"
+                  placeholder="继承默认"
+                  @update:value="(val) => setParamOverride(props.slot, 'top_p', val)"
+                />
+              </Space>
+              <Space direction="vertical" size="small">
+                <TypographyText type="secondary">max_tokens</TypographyText>
+                <InputNumber
+                  :value="props.slot.paramOverride?.max_tokens ?? ''"
+                  :step="1"
+                  placeholder="继承默认"
+                  @update:value="(val) => setParamOverride(props.slot, 'max_tokens', val)"
+                />
+              </Space>
+            </Space>
+            <TypographyText type="secondary">高级 JSON（补充/覆盖其他参数）</TypographyText>
+            <JsonEditor
+              class="slot-advanced-json"
+              :modelValue="advancedJsonValue"
+              placeholder='{"temperature":0.2}'
+              @update:modelValue="updateAdvancedJson"
+            />
+          </Space>
+        </CollapsePanel>
+      </Collapse>
 
-    <footer class="slot-card__footer"></footer>
-  </article>
+      <Space direction="vertical" size="small" style="width: 100%">
+        <TypographyText type="secondary">System Prompt</TypographyText>
+        <TextArea v-model:value="props.slot.systemPrompt" placeholder="为该 Slot 定义 System Prompt" auto-size />
+      </Space>
+
+      <Divider style="margin: 8px 0" />
+
+      <Card size="small" class="slot-output-card">
+        <template #title>
+          <Space align="center" size="middle">
+            <TypographyText>输出 ({{ props.streamOutput ? '流式' : '非流式' }})</TypographyText>
+            <Space size="small">
+              <Tag>TTFB {{ props.slot.metrics.ttfbMs ? `${props.slot.metrics.ttfbMs.toFixed(0)} ms` : '-' }}</Tag>
+              <Tag>耗时 {{ props.slot.metrics.totalMs ? `${props.slot.metrics.totalMs.toFixed(0)} ms` : '-' }}</Tag>
+              <Tag v-if="tokensSummary">Tokens {{ tokensSummary }}</Tag>
+            </Space>
+          </Space>
+        </template>
+        <pre class="slot-output__body">{{ props.slot.output || '等待运行...' }}</pre>
+      </Card>
+
+      <Card v-if="shouldShowToolCalls" size="small">
+        <template #title>
+          <Space align="center" size="middle">
+            <TypographyText>Tool Calls</TypographyText>
+            <Radio.Group v-model:value="toolCallView" option-type="button" button-style="solid">
+              <Radio.Button value="json" :disabled="!parsedToolCalls.length">JSON</Radio.Button>
+              <Radio.Button value="raw">Raw Text</Radio.Button>
+            </Radio.Group>
+          </Space>
+        </template>
+
+        <JsonEditor
+          v-if="toolCallView === 'json' && parsedToolCalls.length"
+          class="slot-toolcalls__editor"
+          :modelValue="toolCallsJson"
+          readonly
+        />
+        <Empty v-else-if="toolCallView === 'json'" description="暂无工具调用数据" />
+        <pre v-else class="slot-toolcalls__raw">{{ toolCallsRawText || '等待工具调用流...' }}</pre>
+      </Card>
+    </Space>
+  </Card>
 </template>

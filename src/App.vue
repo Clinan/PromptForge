@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import localforage from 'localforage';
+import { Button, Card, ConfigProvider, Layout, Space, theme as antTheme } from 'ant-design-vue';
+import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue';
 import type {
   HistoryItem,
   PluginRequest,
@@ -22,7 +24,11 @@ import HistoryLoadDialog from './components/HistoryLoadDialog.vue';
 import PromptComposer from './components/PromptComposer.vue';
 import ContextPanel from './components/ContextPanel.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
-import { NLayout, NLayoutSider } from 'naive-ui';
+import SidebarProjects from './components/SidebarProjects.vue';
+import SidebarProviders from './components/SidebarProviders.vue';
+import SidebarHistory from './components/SidebarHistory.vue';
+
+const { Sider: LayoutSider, Content: LayoutContent } = Layout;
 
 const localStorageKey = 'truestprompt-profiles';
 const editorStorageKey = 'truestprompt-editor-state-v1';
@@ -192,6 +198,10 @@ watch(theme, (mode) => applyTheme(mode));
 function toggleTheme() {
   theme.value = theme.value === 'light' ? 'dark' : 'light';
 }
+
+const antdThemeConfig = computed(() => ({
+  algorithm: theme.value === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm
+}));
 
 function closeCodeDialog() {
   codeDialogOpen.value = false;
@@ -986,231 +996,168 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader :project-options="projectOptions" v-model:selected-project="selectedProjectId" :theme="theme" @toggleTheme="toggleTheme" />
+  <ConfigProvider :theme="antdThemeConfig">
+    <div class="app-shell">
+      <AppHeader
+        :project-options="projectOptions"
+        v-model:selected-project="selectedProjectId"
+        :theme="theme"
+        @toggleTheme="toggleTheme"
+      />
 
-    <div class="workspace" ref="workspaceRef">
-      <NLayout class="workspace-layout" has-sider sider-placement="left" style="background: transparent">
-        <NLayoutSider
-          class="workspace-layout__sider"
-          collapse-mode="width"
-          :collapsed-width="0"
-          :width="leftSidebarWidthPx"
-          :collapsed="leftSidebarHidden"
-          :show-collapsed-content="false"
-          content-style="background: transparent;"
-          style="background: transparent;"
-        >
-          <aside id="workspace-left-sidebar" class="workspace-sidebar">
-            <div class="sidebar-section">
-              <div class="sidebar-section__title">Projects</div>
-              <div class="sidebar-list">
-                <button
-                  v-for="project in projectOptions"
-                  :key="project.id"
-                  class="sidebar-item"
-                  :class="{ active: selectedProjectId === project.id }"
-                  @click="selectedProjectId = project.id"
-                >
-                  <span class="sidebar-item__name">{{ project.label }}</span>
-                  <span class="sidebar-item__badge">Live</span>
-                </button>
-              </div>
-            </div>
-
-            <div class="sidebar-section">
-              <div class="sidebar-section__title">
-                Providers
-                <button class="text-button" @click="showProviderManager = true">管理</button>
-              </div>
-              <div class="providers-list">
-                <div v-if="!providerProfiles.length" class="sidebar-empty">暂无 Provider</div>
-                <button
-                  v-for="profile in providerProfiles"
-                  :key="profile.id"
-                  class="provider-chip"
-                  @click="showProviderManager = true"
-                >
-                  <span class="dot dot--success"></span>
-                  <div class="provider-chip__info">
-                    <div class="provider-chip__name">{{ profile.name }}</div>
-                    <div class="provider-chip__meta">{{ plugins.find((p) => p.id === profile.pluginId)?.name }}</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div class="sidebar-section">
-              <div class="sidebar-section__title">
-                Runs History
-                <button class="text-button" @click="showHistory = true">全部</button>
-              </div>
-              <div class="runs-list">
-                <button
-                  v-for="run in recentHistory"
-                  :key="run.id"
-                  class="run-entry"
-                  @click="loadHistoryIntoEditor(run)"
-                >
-                  <div class="run-entry__title">{{ run.title }}</div>
-                  <div class="run-entry__meta">
-                    <span>{{ new Date(run.createdAt).toLocaleTimeString() }}</span>
-                    <span>{{ run.requestSnapshot.modelId }}</span>
-                  </div>
-                </button>
-                <div v-if="!recentHistory.length" class="sidebar-empty">暂无运行记录</div>
-              </div>
-            </div>
-          </aside>
-        </NLayoutSider>
-
-        <NLayout class="workspace-layout__inner" has-sider sider-placement="right" style="background: transparent">
-          <div class="workspace-layout__main">
-            <main class="workspace-main">
-              <section class="panel composer-panel card">
-                <PromptComposer v-model:messages="shared.userPrompts" />
-              </section>
-
-              <section class="panel slots-panel card">
-                <SlotsSection
-                  :slots="slots"
-                  :providerProfiles="providerProfiles"
-                  :streamOutput="shared.streamOutput"
-                  :refreshingModelsBySlotId="refreshingModelsBySlotId"
-                  :modelOptions="modelOptions"
-                  :defaultParams="shared.defaultParams"
-                  :showParamDiffOnly="showParamDiffOnly"
-                  @copy="addSlot"
-                  @remove="requestRemoveSlot"
-                  @run="runSlot"
-                  @stop="stopSlot"
-                  @export-curl="exportCurl"
-                  @provider-change="onProviderChange"
-                  @refresh-models="forceRefreshModels"
-                  @runSelected="runSelected"
-                  @runAll="runAll"
-                  @stopAll="stopAllSlots"
-                />
-              </section>
-            </main>
-          </div>
-
-          <NLayoutSider
-            class="workspace-layout__sider workspace-layout__sider--right"
-            collapse-mode="width"
+      <div class="workspace" ref="workspaceRef">
+        <Layout class="workspace-layout">
+          <LayoutSider
+            id="workspace-left-sidebar"
+            class="workspace-layout__sider"
             :collapsed-width="0"
-            :width="rightPanelWidthPx"
-            :collapsed="rightPanelHidden"
-            :show-collapsed-content="false"
-            content-style="background: transparent;"
-            style="background: transparent;"
+            :width="leftSidebarWidthPx"
+            :collapsed="leftSidebarHidden"
+            :trigger="null"
           >
-            <ContextPanel
+            <Space direction="vertical" size="middle" class="workspace-sidebar">
+              <SidebarProjects
+                :project-options="projectOptions"
+                :selected-project-id="selectedProjectId"
+                @select="selectedProjectId = $event"
+              />
+              <SidebarProviders :provider-profiles="providerProfiles" :plugins="plugins" @manage="showProviderManager = true" />
+              <SidebarHistory :recent-history="recentHistory" @open="showHistory = true" @load="loadHistoryIntoEditor" />
+            </Space>
+          </LayoutSider>
+
+          <Layout class="workspace-layout__inner">
+            <LayoutContent class="workspace-layout__main">
+              <Space direction="vertical" size="middle" style="width: 100%">
+                <Card size="small" class="panel-card">
+                  <PromptComposer v-model:messages="shared.userPrompts" />
+                </Card>
+
+                <Card size="small" class="panel-card">
+                  <SlotsSection
+                    :slots="slots"
+                    :providerProfiles="providerProfiles"
+                    :streamOutput="shared.streamOutput"
+                    :refreshingModelsBySlotId="refreshingModelsBySlotId"
+                    :modelOptions="modelOptions"
+                    :defaultParams="shared.defaultParams"
+                    :showParamDiffOnly="showParamDiffOnly"
+                    @copy="addSlot"
+                    @remove="requestRemoveSlot"
+                    @run="runSlot"
+                    @stop="stopSlot"
+                    @export-curl="exportCurl"
+                    @provider-change="onProviderChange"
+                    @refresh-models="forceRefreshModels"
+                    @runSelected="runSelected"
+                    @runAll="runAll"
+                    @stopAll="stopAllSlots"
+                  />
+                </Card>
+              </Space>
+            </LayoutContent>
+
+            <LayoutSider
               id="workspace-right-panel"
-              class="context-panel"
-              :shared="shared"
-              v-model:activeTab="contextPanelTab"
-              v-model:showDiffOnly="showParamDiffOnly"
-            />
-          </NLayoutSider>
-        </NLayout>
-      </NLayout>
+              class="workspace-layout__sider workspace-layout__sider--right"
+              :collapsed-width="0"
+              :width="rightPanelWidthPx"
+              :collapsed="rightPanelHidden"
+              :trigger="null"
+            >
+              <ContextPanel
+                class="context-panel"
+                :shared="shared"
+                v-model:activeTab="contextPanelTab"
+                v-model:showDiffOnly="showParamDiffOnly"
+              />
+            </LayoutSider>
+          </Layout>
+        </Layout>
 
-      <div class="folding-handle folding-handle--left" :style="leftPanelToggleStyle">
-        <button
-          type="button"
-          class="folding-handle__button"
-          :class="{ 'is-collapsed': leftSidebarHidden }"
-          @click="leftSidebarHidden = !leftSidebarHidden"
-          :aria-pressed="leftSidebarHidden"
-          aria-controls="workspace-left-sidebar"
-          :aria-label="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
-          :title="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
-        >
-          <span class="sr-only">{{ leftSidebarHidden ? '展开左栏' : '隐藏左栏' }}</span>
-          <span class="folding-handle__icon" aria-hidden="true">
-            <svg v-if="leftSidebarHidden" viewBox="0 0 16 16" focusable="false">
-              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <svg v-else viewBox="0 0 16 16" focusable="false">
-              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </span>
-        </button>
+        <div class="folding-handle folding-handle--left" :style="leftPanelToggleStyle">
+          <Button
+            type="text"
+            shape="circle"
+            :aria-pressed="leftSidebarHidden"
+            aria-controls="workspace-left-sidebar"
+            :aria-label="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+            :title="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+            @click="leftSidebarHidden = !leftSidebarHidden"
+          >
+            <template #icon>
+              <RightOutlined v-if="leftSidebarHidden" />
+              <LeftOutlined v-else />
+            </template>
+          </Button>
+        </div>
+
+        <div class="folding-handle folding-handle--right" :style="rightPanelToggleStyle">
+          <Button
+            type="text"
+            shape="circle"
+            :aria-pressed="rightPanelHidden"
+            aria-controls="workspace-right-panel"
+            :aria-label="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+            :title="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+            @click="rightPanelHidden = !rightPanelHidden"
+          >
+            <template #icon>
+              <LeftOutlined v-if="rightPanelHidden" />
+              <RightOutlined v-else />
+            </template>
+          </Button>
+        </div>
       </div>
 
-      <div class="folding-handle folding-handle--right" :style="rightPanelToggleStyle">
-        <button
-          type="button"
-          class="folding-handle__button"
-          :class="{ 'is-collapsed': rightPanelHidden }"
-          @click="rightPanelHidden = !rightPanelHidden"
-          :aria-pressed="rightPanelHidden"
-          aria-controls="workspace-right-panel"
-          :aria-label="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
-          :title="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
-        >
-          <span class="sr-only">{{ rightPanelHidden ? '展开右栏' : '隐藏右栏' }}</span>
-          <span class="folding-handle__icon" aria-hidden="true">
-            <svg v-if="rightPanelHidden" viewBox="0 0 16 16" focusable="false">
-              <path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <svg v-else viewBox="0 0 16 16" focusable="false">
-              <path d="M10 3.5L5.5 8L10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </span>
-        </button>
-      </div>
+      <ProviderPanel
+        v-if="showProviderManager"
+        :plugins="plugins"
+        :providerProfiles="providerProfiles"
+        :newProfile="newProfile"
+        :defaultProviderTemplate="defaultProviderTemplate"
+        :onResetNewProfile="resetNewProfile"
+        :onAddProfile="addProfile"
+        :onRemoveProfile="requestRemoveProfile"
+        :onExportProviders="exportProvidersEncryptedZip"
+        :onImportProviders="requestImportProvidersEncryptedZip"
+        :onClearKeys="requestClearProviderApiKeys"
+        @close="showProviderManager = false"
+      />
 
+      <HistoryDrawer
+        v-if="showHistory"
+        :items="historyItems"
+        @close="showHistory = false"
+        @load="loadHistoryIntoEditor"
+        @toggle-star="toggleStar"
+      />
+
+      <HistoryLoadDialog
+        :open="historyLoadOpen"
+        :item="historyLoadItem"
+        :options="historyLoadOptions"
+        @close="historyLoadOpen = false"
+        @confirm="applyHistoryLoad"
+      />
+
+      <CodeDialog
+        :open="codeDialogOpen"
+        :title="codeDialogTitle"
+        :code="codeDialogCode"
+        v-model:usePlaceholder="useCurlPlaceholder"
+        @close="closeCodeDialog"
+      />
+
+      <ConfirmDialog
+        :open="confirmDialogOpen"
+        :title="confirmDialogTitle"
+        :description="confirmDialogDescription"
+        :tone="confirmDialogTone"
+        :confirmText="confirmDialogConfirmText"
+        @close="closeConfirmDialog"
+        @confirm="confirmDialogConfirm"
+      />
     </div>
-
-  <ProviderPanel
-    v-if="showProviderManager"
-      :plugins="plugins"
-      :providerProfiles="providerProfiles"
-      :newProfile="newProfile"
-      :defaultProviderTemplate="defaultProviderTemplate"
-      :onResetNewProfile="resetNewProfile"
-      :onAddProfile="addProfile"
-      :onRemoveProfile="requestRemoveProfile"
-      :onExportProviders="exportProvidersEncryptedZip"
-      :onImportProviders="requestImportProvidersEncryptedZip"
-      :onClearKeys="requestClearProviderApiKeys"
-      @close="showProviderManager = false"
-    />
-
-    <HistoryDrawer
-      v-if="showHistory"
-      :items="historyItems"
-      @close="showHistory = false"
-      @load="loadHistoryIntoEditor"
-      @toggle-star="toggleStar"
-    />
-
-    <HistoryLoadDialog
-      :open="historyLoadOpen"
-      :item="historyLoadItem"
-      :options="historyLoadOptions"
-      @close="historyLoadOpen = false"
-      @confirm="applyHistoryLoad"
-    />
-
-    <CodeDialog
-      :open="codeDialogOpen"
-      :title="codeDialogTitle"
-      :code="codeDialogCode"
-      v-model:usePlaceholder="useCurlPlaceholder"
-      @close="closeCodeDialog"
-    />
-
-    <ConfirmDialog
-      :open="confirmDialogOpen"
-      :title="confirmDialogTitle"
-      :description="confirmDialogDescription"
-      :tone="confirmDialogTone"
-      :confirmText="confirmDialogConfirmText"
-      @close="closeConfirmDialog"
-      @confirm="confirmDialogConfirm"
-    />
-  </div>
+  </ConfigProvider>
 </template>
