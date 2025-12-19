@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { Button, Card, Space, Tooltip } from 'ant-design-vue';
+import { FastForwardOutlined, HistoryOutlined, PlayCircleOutlined } from '@ant-design/icons-vue';
 
 const props = defineProps<{
   showHistory: boolean;
@@ -123,33 +125,36 @@ onBeforeUnmount(() => {
     :class="{ 'floating-panel--dragging': dragging }"
     :style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
   >
-    <div class="floating-panel__header" @pointerdown="startDrag">
-      <div class="floating-panel__title">操作</div>
-      <div class="floating-panel__handle" title="拖动">⠿</div>
-    </div>
-    <div class="floating-panel__body">
-      <button class="floating-action success" title="Run Selected" aria-label="Run Selected" @click="emit('runSelected')">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 5v14l11-7z" />
-        </svg>
-      </button>
-      <button class="floating-action ghost" title="Run All" aria-label="Run All" @click="emit('runAll')">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 5v14l8-7zm8 0v14l8-7z" />
-        </svg>
-      </button>
-      <button
-        class="floating-action ghost"
-        :title="props.showHistory ? '隐藏历史' : '打开历史'"
-        :aria-label="props.showHistory ? '隐藏历史' : '打开历史'"
-        @click="emit('toggleHistory')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M13 3a9 9 0 1 0 8.485 6H19v-2h5v5h-2V9.357A11 11 0 1 1 13 1v2zm-1 5h2v6l4 2-.9 1.8L12 15V8z"
-          />
-        </svg>
-      </button>
-    </div>
+    <Card size="small" :bordered="true">
+      <template #title>
+        <div class="floating-panel__header" @pointerdown="startDrag">
+          <span>操作</span>
+          <span class="floating-panel__handle">⠿</span>
+        </div>
+      </template>
+      <Space>
+        <Tooltip title="Run Selected">
+          <Button type="primary" shape="circle" @click="emit('runSelected')">
+            <template #icon>
+              <PlayCircleOutlined />
+            </template>
+          </Button>
+        </Tooltip>
+        <Tooltip title="Run All">
+          <Button shape="circle" @click="emit('runAll')">
+            <template #icon>
+              <FastForwardOutlined />
+            </template>
+          </Button>
+        </Tooltip>
+        <Tooltip :title="props.showHistory ? '隐藏历史' : '打开历史'">
+          <Button shape="circle" @click="emit('toggleHistory')">
+            <template #icon>
+              <HistoryOutlined />
+            </template>
+          </Button>
+        </Tooltip>
+      </Space>
+    </Card>
   </div>
 </template>
