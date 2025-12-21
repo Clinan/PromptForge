@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Avatar, Button, Col, Input, Row, Select, Space, Typography } from 'ant-design-vue';
+import { BulbFilled, BulbOutlined } from '@ant-design/icons-vue';
+
+const { Search: InputSearch } = Input;
+const { Text: TypographyText } = Typography;
 
 const props = defineProps<{
   projectOptions: { id: string; label: string }[];
@@ -13,6 +18,17 @@ const emit = defineEmits<{
 }>();
 
 const searchValue = ref('');
+const selectedProjectProxy = computed({
+  get: () => props.selectedProject,
+  set: (value: string) => emit('update:selectedProject', value)
+});
+
+const projectSelectOptions = computed(() =>
+  props.projectOptions.map((option) => ({
+    label: option.label,
+    value: option.id
+  }))
+);
 
 watch(
   () => props.selectedProject,
@@ -26,41 +42,38 @@ watch(
 </script>
 
 <template>
-  <header class="top-bar card">
-    <div class="top-bar__left">
-      <div class="logo">TruestPrompt</div>
-      <select
-        class="project-select"
-        :value="props.selectedProject"
-        @change="emit('update:selectedProject', ($event.target as HTMLSelectElement).value)"
-      >
-        <option v-for="project in props.projectOptions" :key="project.id" :value="project.id">
-          {{ project.label }}
-        </option>
-      </select>
-    </div>
-    <div class="top-bar__center">
-      <input class="top-bar__search" v-model="searchValue" placeholder="搜索 Prompt / Runs / Variables" />
-    </div>
-    <div class="top-bar__right">
-      <button
-        class="icon-button theme-toggle"
-        :title="props.theme === 'light' ? '切换为暗色' : '切换为浅色'"
-        :aria-label="props.theme === 'light' ? '切换为暗色' : '切换为浅色'"
-        @click="emit('toggleTheme')"
-      >
-        <svg v-if="props.theme === 'light'" viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zm0-16h1v3h-1V2zm0 19h1v3h-1v-3zM4.22 5.64l.7-.7 2.12 2.12-.7.7L4.22 5.64zm12.74 12.74.7-.7 2.12 2.12-.7.7-2.12-2.12zM2 11h3v1H2v-1zm19 0h3v1h-3v-1zM4.22 18.36l2.12-2.12.7.7-2.12 2.12-.7-.7zM16.96 7.06l2.12-2.12.7.7-2.12 2.12-.7-.7z"
+  <header class="app-header">
+    <Row align="middle" justify="space-between" :gutter="16" wrap="false">
+      <Col flex="0 0 auto">
+        <Space align="center" size="middle">
+          <TypographyText strong class="app-header__logo">TruestPrompt</TypographyText>
+          <Select
+            v-model:value="selectedProjectProxy"
+            :options="projectSelectOptions"
+            placeholder="选择项目"
+            style="min-width: 180px"
           />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M21 14.3A8 8 0 0 1 9.7 3a7 7 0 1 0 11.3 11.3z"
-          />
-        </svg>
-      </button>
-      <div class="avatar">LC</div>
-    </div>
+        </Space>
+      </Col>
+      <Col flex="auto">
+        <InputSearch v-model:value="searchValue" placeholder="搜索 Prompt / Runs / Variables" allow-clear />
+      </Col>
+      <Col flex="0 0 auto">
+        <Space align="center" size="middle">
+          <Button
+            shape="circle"
+            :aria-label="props.theme === 'light' ? '切换为暗色' : '切换为浅色'"
+            :title="props.theme === 'light' ? '切换为暗色' : '切换为浅色'"
+            @click="emit('toggleTheme')"
+          >
+            <template #icon>
+              <BulbOutlined v-if="props.theme === 'light'" />
+              <BulbFilled v-else />
+            </template>
+          </Button>
+          <Avatar>LC</Avatar>
+        </Space>
+      </Col>
+    </Row>
   </header>
 </template>

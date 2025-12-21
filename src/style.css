@@ -1,5 +1,4 @@
 @import 'ant-design-vue/dist/reset.css';
 @import './styles/theme.css';
 @import './styles/base.css';
-@import './styles/utilities.css';
 @import './styles/components.css';
