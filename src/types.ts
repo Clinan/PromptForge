@@ -119,3 +119,11 @@ export type ProviderProfileDraft = {
   baseUrl: string;
   pluginId: string;
 };
+
+// Project Management Types
+export type ProjectMetadata = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+};

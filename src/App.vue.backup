@@ -13,45 +13,21 @@ import type {
 import { plugins } from './lib/plugins';
 import { newId } from './lib/id';
 import { buildProvidersExportZip, downloadBlob, parseProvidersImportZip } from './lib/providerTransfer';
-import {
-  getItem,
-  setItem,
-  getHistoryStore,
-  getModelCacheStore,
-  setCurrentProjectId,
-  STORAGE_KEYS,
-  isLocalStorageAvailable,
-  enableMemoryFallback,
-  migrateToProjectNamespace,
-} from './lib/storage';
-import { useProjectManager } from './composables/useProjectManager';
-
-// 新组件导入
-import AppToolbar from './components/layout/AppToolbar.vue';
-import MainWorkspace from './components/layout/MainWorkspace.vue';
-import SlotsGrid from './components/slots/SlotsGrid.vue';
-import PromptComposer from './components/prompt/PromptComposer.vue';
-import HistoryDrawer from './components/drawers/HistoryDrawer.vue';
-import VarsModal from './components/modals/VarsModal.vue';
-import ParamsModal from './components/modals/ParamsModal.vue';
-import ToolsModal from './components/modals/ToolsModal.vue';
-import ProjectSelector from './components/layout/ProjectSelector.vue';
-import CurlImportModal from './components/modals/CurlImportModal.vue';
-import type { ImportResult } from './components/modals/CurlImportModal.vue';
-import { shouldOverwriteSlot } from './lib/curlParser';
-
-// 旧组件（保留兼容）
 import ProviderPanel from './components/ProviderPanel.vue';
+import AppHeader from './components/AppHeader.vue';
+import SlotsSection from './components/SlotsSection.vue';
+import HistoryDrawer from './components/HistoryDrawer.vue';
 import CodeDialog from './components/CodeDialog.vue';
 import HistoryLoadDialog from './components/HistoryLoadDialog.vue';
+import PromptComposer from './components/PromptComposer.vue';
+import ContextPanel from './components/ContextPanel.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
+import { NLayout, NLayoutSider } from 'naive-ui';
 
-// 检查 localStorage 可用性
-if (!isLocalStorageAvailable()) {
-  enableMemoryFallback();
-}
-
-// 存储配置 - 使用 StorageService 的 key 常量
+const localStorageKey = 'truestprompt-profiles';
+const editorStorageKey = 'truestprompt-editor-state-v1';
+const historyStore = localforage.createInstance({ name: 'truestprompt-history' });
+const modelCacheStore = localforage.createInstance({ name: 'truestprompt-model-cache' });
 const modelCacheTtlMs = 24 * 60 * 60 * 1000;
 const defaultSharedParams = {
   temperature: 0.7,
@@ -59,54 +35,45 @@ const defaultSharedParams = {
   max_tokens: 8192
 };
 
-// 状态
 const providerProfiles = ref<ProviderProfile[]>([]);
 const historyItems = ref<HistoryItem[]>([]);
-
-// 模态框状态
 const showHistory = ref(false);
 const showProviderManager = ref(false);
-const showVarsModal = ref(false);
-const showParamsModal = ref(false);
-const showToolsModal = ref(false);
-const showCurlImportModal = ref(false);
-
-// 高亮 Slot 状态（用于导入动画）
-const highlightedSlotId = ref<string | null>(null);
-
-// 主题
+const contextPanelTab = ref<'parameters' | 'tools' | 'variables'>('parameters');
+const showParamDiffOnly = ref(false);
 const themeStorageKey = 'truestprompt-theme';
 const theme = ref<'light' | 'dark'>('light');
 const useCurlPlaceholder = ref(true);
+const leftSidebarHidden = ref(false);
+const rightPanelHidden = ref(false);
+const workspaceGapPx = 6;
+const leftSidebarWidthPx = 240;
+const rightPanelWidthPx = 360;
+const workspaceRef = ref<HTMLElement | null>(null);
 
-// 项目管理
-const projectManager = useProjectManager({
-  onBeforeSwitch: async (fromProjectId, toProjectId) => {
-    // 保存当前项目状态
-    saveEditorState();
-    saveProfiles();
-  },
-  onAfterSwitch: async (projectId) => {
-    // 加载新项目状态
-    loadProfiles();
-    loadEditorState();
-    if (!slots.value.length) {
-      slots.value = [createSlot()];
-    }
-    await Promise.all(slots.value.map((slot) => refreshModelsForSlot(slot)));
-    await loadHistory();
-  },
+const leftPanelToggleStyle = computed(() => {
+  const offset = leftSidebarHidden.value ? 16 : leftSidebarWidthPx + 16;
+  return {
+    left: `${offset}px`,
+    top: '50%'
+  };
 });
 
-const { projects, currentProjectId, sortedProjects, createProject, renameProject, deleteProject, switchProject } = projectManager;
+const rightPanelToggleStyle = computed(() => {
+  const offset = rightPanelHidden.value ? 16 : rightPanelWidthPx + 16;
+  return {
+    right: `${offset}px`,
+    top: '50%'
+  };
+});
 
-// 代码对话框
+
+
 const codeDialogOpen = ref(false);
 const codeDialogTitle = ref('');
 const codeDialogCode = ref('');
 const codeDialogSlotId = ref<string | null>(null);
 
-// 确认对话框
 const confirmDialogOpen = ref(false);
 const confirmDialogTitle = ref('');
 const confirmDialogDescription = ref('');
@@ -114,106 +81,6 @@ const confirmDialogTone = ref<'default' | 'danger'>('default');
 const confirmDialogConfirmText = ref('确定');
 let confirmDialogAction: null | (() => void | Promise<void>) = null;
 
-// 历史加载对话框
-const historyLoadOpen = ref(false);
-const historyLoadItem = ref<HistoryItem | null>(null);
-const historyLoadOptions = reactive({
-  provider: true,
-  model: true,
-  systemPrompt: true,
-  params: true,
-  userPrompts: true,
-  tools: true,
-  output: true,
-  metrics: true
-});
-
-// 初始用户消息
-const initialUserPrompt: UserPromptPreset = {
-  id: newId(),
-  role: 'user',
-  text: 'hello'
-};
-
-// 共享状态
-const shared = reactive<SharedState>({
-  userPrompts: [initialUserPrompt],
-  toolsDefinition: '[{"type":"function","function":{"name":"fetchDocs","description":"Query project docs","parameters":{"type":"object","properties":{},"additionalProperties":true}}}]',
-  variables: [{ id: newId(), key: '', value: '' }],
-  defaultParams: { ...defaultSharedParams },
-  enableSuggestions: true,
-  streamOutput: true
-});
-
-// Slots 状态
-const slots = ref<Slot[]>([]);
-const abortControllersBySlotId = new Map<string, AbortController>();
-
-// 模型相关
-const newProfile = reactive<ProviderProfileDraft>({
-  name: '',
-  apiKey: '',
-  baseUrl: '',
-  pluginId: plugins[0].id
-});
-const modelsByKey = reactive<Record<string, { id: string; label: string }[]>>({});
-const refreshingModelsBySlotId = reactive<Record<string, boolean>>({});
-
-const defaultProviderTemplate = computed(() => {
-  const plugin = plugins.find((p) => p.id === newProfile.pluginId);
-  return plugin?.defaultBaseUrl || 'https://api.openai.com/v1/chat/completions';
-});
-
-// 计算属性
-const hasRunningSlots = computed(() => slots.value.some((slot) => slot.status === 'running'));
-
-// 模型选项映射（供 SlotsGrid 使用）
-const modelOptionsMap = computed(() => {
-  const map: Record<string, { id: string; label: string }[]> = {};
-  slots.value.forEach(slot => {
-    const key = getModelsCacheKey(slot);
-    map[slot.providerProfileId || ''] = modelsByKey[key] || [];
-  });
-  return map;
-});
-
-// 刷新状态映射
-const refreshingModelsMap = computed(() => {
-  const map: Record<string, boolean> = {};
-  slots.value.forEach(slot => {
-    map[slot.providerProfileId || ''] = refreshingModelsBySlotId[slot.id] || false;
-  });
-  return map;
-});
-
-// 主题相关
-function applyTheme(mode: 'light' | 'dark') {
-  document.documentElement.setAttribute('data-theme', mode);
-  try {
-    localStorage.setItem(themeStorageKey, mode);
-  } catch (err) {
-    console.warn('无法保存主题偏好：', err);
-  }
-}
-
-if (typeof window !== 'undefined') {
-  let storedTheme: 'light' | 'dark' | null = null;
-  try {
-    storedTheme = localStorage.getItem(themeStorageKey) as 'light' | 'dark' | null;
-  } catch (err) {
-    console.warn('无法读取主题偏好（localStorage 不可用）。', err);
-  }
-  theme.value = storedTheme === 'dark' ? 'dark' : 'light';
-  applyTheme(theme.value);
-}
-
-watch(theme, (mode) => applyTheme(mode));
-
-function toggleTheme() {
-  theme.value = theme.value === 'light' ? 'dark' : 'light';
-}
-
-// 确认对话框
 function openConfirmDialog(options: {
   title: string;
   description?: string;
@@ -240,32 +107,71 @@ async function confirmDialogConfirm() {
   await action?.();
 }
 
+const historyLoadOpen = ref(false);
+const historyLoadItem = ref<HistoryItem | null>(null);
+const historyLoadOptions = reactive({
+  provider: true,
+  model: true,
+  systemPrompt: true,
+  params: true,
+  userPrompts: true,
+  tools: true,
+  output: true,
+  metrics: true
+});
+
+function applyTheme(mode: 'light' | 'dark') {
+  document.documentElement.setAttribute('data-theme', mode);
+  try {
+    localStorage.setItem(themeStorageKey, mode);
+  } catch (err) {
+    console.warn('无法保存主题偏好：', err);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  let storedTheme: 'light' | 'dark' | null = null;
+  try {
+    storedTheme = localStorage.getItem(themeStorageKey) as 'light' | 'dark' | null;
+  } catch (err) {
+    console.warn('无法读取主题偏好（localStorage 不可用）。', err);
+  }
+  theme.value = storedTheme === 'dark' ? 'dark' : 'light';
+  applyTheme(theme.value);
+}
+
+watch(theme, (mode) => applyTheme(mode));
+
+function toggleTheme() {
+  theme.value = theme.value === 'light' ? 'dark' : 'light';
+}
+
 function closeCodeDialog() {
   codeDialogOpen.value = false;
   codeDialogSlotId.value = null;
 }
 
-// 工具函数
-function removeEmptyEntries(obj: Record<string, unknown>) {
-  const cleaned: Record<string, unknown> = {};
-  Object.entries(obj).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
-    if (typeof value === 'string' && value.trim() === '') return;
-    if (Array.isArray(value) && value.length === 0) return;
-    cleaned[key] = value;
-  });
-  return cleaned;
-}
+const initialUserPrompt: UserPromptPreset = {
+  id: newId(),
+  role: 'user',
+  text: 'hello'
+};
 
-function coerceNumber(value: unknown, fallback: number) {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : fallback;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+const shared = reactive<SharedState>({
+  userPrompts: [initialUserPrompt],
+  toolsDefinition: '[{"type":"function","function":{"name":"fetchDocs","description":"Query project docs","parameters":{"type":"object","properties":{},"additionalProperties":true}}}]',
+  variables: [{ id: newId(), key: '', value: '' }],
+  defaultParams: { ...defaultSharedParams },
+  enableSuggestions: true,
+  streamOutput: true
+});
 
-// 编辑器状态持久化
+const projectOptions = [
+  { id: 'core-playground', label: 'Core Playground' },
+  { id: 'evaluation-lab', label: 'Evaluation Lab' },
+  { id: 'creative-suite', label: 'Creative Suite' }
+];
+const selectedProjectId = ref(projectOptions[0].id);
 type PersistedEditorState = {
   version: 3;
   shared: SharedState;
@@ -297,7 +203,7 @@ function serializeEditorState(): PersistedEditorState {
 function loadEditorState() {
   let raw: string | null = null;
   try {
-    raw = getItem(STORAGE_KEYS.EDITOR_STATE);
+    raw = localStorage.getItem(editorStorageKey);
   } catch (err) {
     console.warn('无法读取本地编辑器状态（localStorage 不可用）。', err);
     return;
@@ -312,7 +218,7 @@ function loadEditorState() {
           .filter((p): p is UserPromptPreset => Boolean(p && typeof (p as UserPromptPreset).id === 'string'))
           .map((p) => ({
             id: p.id,
-            role: (p.role === 'system' || p.role === 'assistant' ? p.role : 'user') as 'user' | 'system' | 'assistant',
+            role: p.role === 'system' || p.role === 'assistant' ? p.role : 'user',
             text: typeof p.text === 'string' ? p.text : ''
           }))
       : [];
@@ -364,17 +270,94 @@ function loadEditorState() {
 
 function saveEditorState() {
   try {
-    setItem(STORAGE_KEYS.EDITOR_STATE, JSON.stringify(serializeEditorState()));
+    localStorage.setItem(editorStorageKey, JSON.stringify(serializeEditorState()));
   } catch (err) {
     console.warn('保存本地编辑器状态失败。', err);
   }
 }
 
-// Provider 管理
+const newProfile = reactive<ProviderProfileDraft>({
+  name: '',
+  apiKey: '',
+  baseUrl: '',
+  pluginId: plugins[0].id
+});
+const modelsByKey = reactive<Record<string, { id: string; label: string }[]>>({});
+const refreshingModelsBySlotId = reactive<Record<string, boolean>>({});
+const defaultProviderTemplate = computed(() => {
+  const plugin = plugins.find((p) => p.id === newProfile.pluginId);
+  return plugin?.defaultBaseUrl || 'https://api.openai.com/v1/chat/completions';
+});
+
+function removeEmptyEntries(obj: Record<string, unknown>) {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string' && value.trim() === '') return;
+    if (Array.isArray(value) && value.length === 0) return;
+    cleaned[key] = value;
+  });
+  return cleaned;
+}
+
+function coerceNumber(value: unknown, fallback: number) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const slots = ref<Slot[]>([]);
+const abortControllersBySlotId = new Map<string, AbortController>();
+
+watch(useCurlPlaceholder, () => {
+  if (!codeDialogOpen.value || !codeDialogSlotId.value) return;
+  const slot = slots.value.find((item) => item.id === codeDialogSlotId.value);
+  if (!slot) return;
+  const snippet = buildCurlSnippet(slot);
+  if (!snippet) return;
+  codeDialogTitle.value = snippet.title;
+  codeDialogCode.value = snippet.code;
+});
+
+const hasRunningSlots = computed(() => slots.value.some((slot) => slot.status === 'running'));
+
+function stopSlot(slotId: string) {
+  abortControllersBySlotId.get(slotId)?.abort();
+}
+
+function stopAllSlots() {
+  Array.from(abortControllersBySlotId.values()).forEach((controller) => controller.abort());
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  // 停止运行快捷键
+  const wantsStop = (event.ctrlKey || event.metaKey) && (event.key === '.' || event.code === 'Period');
+  if (wantsStop && hasRunningSlots.value) {
+    event.preventDefault();
+    stopAllSlots();
+    return;
+  }
+
+  // 边栏切换快捷键
+  const isModifierPressed = event.ctrlKey || event.metaKey;
+  if (isModifierPressed && event.key === '[') {
+    event.preventDefault();
+    leftSidebarHidden.value = !leftSidebarHidden.value;
+    return;
+  }
+  if (isModifierPressed && event.key === ']') {
+    event.preventDefault();
+    rightPanelHidden.value = !rightPanelHidden.value;
+    return;
+  }
+}
+
 function loadProfiles() {
   let stored: string | null = null;
   try {
-    stored = getItem(STORAGE_KEYS.PROFILES);
+    stored = localStorage.getItem(localStorageKey);
   } catch (err) {
     console.warn('无法读取 Provider 配置（localStorage 不可用）。', err);
     providerProfiles.value = [];
@@ -393,7 +376,7 @@ function loadProfiles() {
 
 function saveProfiles() {
   try {
-    setItem(STORAGE_KEYS.PROFILES, JSON.stringify(providerProfiles.value));
+    localStorage.setItem(localStorageKey, JSON.stringify(providerProfiles.value));
   } catch (err) {
     console.warn('保存 Provider 配置失败（localStorage 不可用）。', err);
     alert('保存 Provider 配置失败：浏览器禁用了本地存储。');
@@ -426,7 +409,7 @@ async function importProvidersEncryptedZip(file: File) {
   if (!password) return;
   try {
     const parsed = await parseProvidersImportZip(file, password);
-    setItem(STORAGE_KEYS.PROFILES, JSON.stringify(parsed));
+    localStorage.setItem(localStorageKey, JSON.stringify(parsed));
     loadProfiles();
     resetNewProfile();
     alert('导入成功（已覆盖本地 Provider 列表）');
@@ -516,7 +499,6 @@ function requestClearProviderApiKeys() {
   });
 }
 
-// Slot 管理
 function createSlot(copyFrom?: Slot): Slot {
   const defaultProvider = providerProfiles.value[0];
   const providerProfileId = copyFrom?.providerProfileId ?? defaultProvider?.id ?? null;
@@ -540,27 +522,10 @@ function createSlot(copyFrom?: Slot): Slot {
 
 function addSlot(copyFrom?: Slot) {
   slots.value.push(createSlot(copyFrom));
-  saveEditorState();
-}
-
-// 添加用户消息（供工具栏调用）
-function addUserMessage() {
-  const newMessage: UserPromptPreset = {
-    id: newId(),
-    role: 'user',
-    text: ''
-  };
-  shared.userPrompts = [...shared.userPrompts, newMessage];
-  saveEditorState();
-}
-
-function copySlot(slot: Slot) {
-  addSlot(slot);
 }
 
 function removeSlot(slotId: string) {
   slots.value = slots.value.filter((s) => s.id !== slotId);
-  saveEditorState();
 }
 
 function requestRemoveSlot(slotId: string) {
@@ -575,15 +540,13 @@ function requestRemoveSlot(slotId: string) {
   });
 }
 
-function updateSlot(updatedSlot: Slot) {
-  const index = slots.value.findIndex(s => s.id === updatedSlot.id);
-  if (index >= 0) {
-    slots.value[index] = updatedSlot;
-    saveEditorState();
-  }
+const selectedSlots = computed(() => slots.value.filter((s) => s.selected));
+const recentHistory = computed(() => historyItems.value.slice(0, 5));
+
+async function refreshModelsForSlot(slot: Slot) {
+  await refreshModelsForSlotWithOptions(slot, {});
 }
 
-// 模型管理
 function getModelsCacheKey(slot: Slot) {
   const pluginId = resolvePluginId(slot);
   const plugin = getPlugin(slot);
@@ -592,23 +555,11 @@ function getModelsCacheKey(slot: Slot) {
   return `${pluginId}::${baseUrl}`;
 }
 
-async function refreshModelsForSlot(slot: Slot) {
-  await refreshModelsForSlotWithOptions(slot, {});
-}
-
 async function refreshModelsForSlotWithOptions(slot: Slot, opts: { force?: boolean }) {
   const plugin = getPlugin(slot);
   const cacheKey = getModelsCacheKey(slot);
   const profile =
     getProfile(slot) ?? ({ id: '', name: '', apiKey: '', baseUrl: '', pluginId: plugin.id } as ProviderProfile);
-
-  // 调试日志
-  console.log('[refreshModelsForSlot] slot.providerProfileId:', slot.providerProfileId);
-  console.log('[refreshModelsForSlot] profile:', profile);
-  console.log('[refreshModelsForSlot] profile.apiKey:', profile.apiKey ? '***' : '(empty)');
-  console.log('[refreshModelsForSlot] providerProfiles count:', providerProfiles.value.length);
-
-  const modelCacheStore = getModelCacheStore();
 
   if (!opts.force) {
     try {
@@ -628,6 +579,7 @@ async function refreshModelsForSlotWithOptions(slot: Slot, opts: { force?: boole
   try {
     const models = await plugin.listModels(profile);
     modelsByKey[cacheKey] = models;
+    // 避免把 Proxy/不可克隆对象写入 IndexedDB
     const plainModels = JSON.parse(JSON.stringify(models)) as { id: string; label: string }[];
     await modelCacheStore.setItem(cacheKey, { savedAt: Date.now(), models: plainModels });
   } catch (err) {
@@ -637,9 +589,22 @@ async function refreshModelsForSlotWithOptions(slot: Slot, opts: { force?: boole
   }
 }
 
+function modelOptions(slot: Slot) {
+  const key = getModelsCacheKey(slot);
+  const list = modelsByKey[key];
+  if (list?.length) return list;
+  return slot.modelId ? [{ id: slot.modelId, label: slot.modelId }] : [];
+}
+
+function onProviderChange(slot: Slot) {
+  // 切换 Provider 后默认清空 model（避免误用旧 provider 的 model）
+  slot.modelId = '';
+  resolvePluginId(slot);
+  refreshModelsForSlot(slot);
+}
+
 async function forceRefreshModels(slot: Slot) {
   const cacheKey = getModelsCacheKey(slot);
-  const modelCacheStore = getModelCacheStore();
   try {
     await modelCacheStore.removeItem(cacheKey);
   } catch (err) {
@@ -647,17 +612,7 @@ async function forceRefreshModels(slot: Slot) {
   }
   await refreshModelsForSlotWithOptions(slot, { force: true });
 }
-
-function onProviderChange(slot: Slot) {
-  slot.modelId = '';
-  resolvePluginId(slot);
-  refreshModelsForSlot(slot);
-  saveEditorState();
-}
-
-// 历史管理
 async function loadHistory() {
-  const historyStore = getHistoryStore();
   const items: HistoryItem[] = (await historyStore.getItem('items')) || [];
   historyItems.value = items.sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -665,119 +620,16 @@ async function loadHistory() {
 let historyPersistQueue: Promise<void> = Promise.resolve();
 
 function queuePersistHistory(items: HistoryItem[]) {
-  const historyStore = getHistoryStore();
+  // Vue 的 reactive/ref 可能包含 Proxy，IndexedDB（localforage）无法结构化克隆，会触发 DataCloneError
   const plain = JSON.parse(JSON.stringify(items)) as HistoryItem[];
   historyPersistQueue = historyPersistQueue
-    .then(() => { historyStore.setItem('items', plain); })
+    .then(() => historyStore.setItem('items', plain))
     .catch((err) => console.warn('保存历史失败。', err));
   return historyPersistQueue;
 }
 
-function toggleStar(id: string) {
-  historyItems.value = historyItems.value.map((item) =>
-    item.id === id ? { ...item, star: !item.star } : item
-  );
-  queuePersistHistory(historyItems.value);
-}
-
-function deleteHistoryItem(id: string) {
-  historyItems.value = historyItems.value.filter((item) => item.id !== id);
-  queuePersistHistory(historyItems.value);
-}
-
-function loadHistoryIntoEditor(item: HistoryItem) {
-  historyLoadItem.value = item;
-  historyLoadOpen.value = true;
-}
-
-function applyHistoryLoad() {
-  const item = historyLoadItem.value;
-  if (!item) return;
-
-  const targetSlot = slots.value.filter(s => s.selected)[0] || slots.value[0] || createSlot();
-  if (!slots.value.length) slots.value = [targetSlot];
-  targetSlot.toolCalls = null;
-
-  const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt;
-  const userPrompts = Array.isArray(item.requestSnapshot.userPrompts)
-    ? item.requestSnapshot.userPrompts
-    : legacyUserPrompt
-      ? [legacyUserPrompt]
-      : [];
-  const historyMessages =
-    Array.isArray(item.requestSnapshot.messages) && item.requestSnapshot.messages.length
-      ? item.requestSnapshot.messages
-      : userPrompts.map((text) => ({ role: 'user', content: text }));
-
-  if (historyLoadOptions.userPrompts) {
-    shared.userPrompts = historyMessages.length
-      ? historyMessages.map((msg) => ({
-          id: newId(),
-          role: msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user',
-          text: typeof msg.content === 'string' ? msg.content : ''
-        }))
-      : [{ id: newId(), role: 'user', text: '' }];
-  }
-
-  if (historyLoadOptions.tools) {
-    shared.toolsDefinition = item.requestSnapshot.toolsDefinition;
-  }
-
-  if (historyLoadOptions.provider && item.providerProfileSnapshot) {
-    const snap = item.providerProfileSnapshot;
-    const existing = providerProfiles.value.find((p) => p.id === snap.id);
-    if (!existing) {
-      providerProfiles.value.push({ ...snap });
-      saveProfiles();
-    }
-    targetSlot.providerProfileId = snap.id;
-    targetSlot.pluginId = snap.pluginId;
-    refreshModelsForSlot(targetSlot);
-  }
-
-  if (historyLoadOptions.model) {
-    targetSlot.modelId = item.requestSnapshot.modelId || '';
-  }
-
-  historyLoadOptions.systemPrompt = true;
-  targetSlot.systemPrompt = item.requestSnapshot.systemPrompt || '';
-
-  if (historyLoadOptions.params) {
-    targetSlot.paramOverride = item.requestSnapshot.params ? { ...(item.requestSnapshot.params as Record<string, unknown>) } : null;
-  }
-
-  if (historyLoadOptions.output) {
-    targetSlot.output = item.responseSnapshot.outputText || '';
-    targetSlot.status = targetSlot.output ? 'done' : 'idle';
-    targetSlot.historyId = item.id;
-    targetSlot.toolCalls = item.responseSnapshot.toolCalls ?? null;
-  }
-
-  if (historyLoadOptions.metrics) {
-    targetSlot.metrics = {
-      ...targetSlot.metrics,
-      ttfbMs: item.responseSnapshot.metrics?.ttfbMs ?? null,
-      totalMs: item.responseSnapshot.metrics?.totalMs ?? null,
-      tokens: item.responseSnapshot.usage
-    };
-  }
-
-  historyLoadOpen.value = false;
-  historyLoadItem.value = null;
-  saveEditorState();
-}
-
-// 请求构建
-const RESERVED_REQUEST_PARAM_KEYS = new Set(['tools']);
-
 function mergeParams(slot: Slot) {
-  const combined: Record<string, unknown> = { ...shared.defaultParams, ...(slot.paramOverride || {}) };
-  RESERVED_REQUEST_PARAM_KEYS.forEach((key) => {
-    if (key in combined) {
-      delete combined[key];
-    }
-  });
-  return removeEmptyEntries(combined);
+  return removeEmptyEntries({ ...shared.defaultParams, ...(slot.paramOverride || {}) });
 }
 
 function buildVariableMap() {
@@ -837,22 +689,16 @@ function getPlugin(slot: Slot) {
   return plugins.find((p) => p.id === pluginId)!;
 }
 
-// cURL 导出
 function buildCurlSnippet(slot: Slot): { title: string; code: string } | null {
   const plugin = getPlugin(slot);
   const profile = getProfile(slot);
   if (!profile) return null;
   const request = buildRequest(slot);
   const maskedProfile = useCurlPlaceholder.value ? { ...profile, apiKey: '' } : profile;
-  try {
-    return {
-      title: `cURL（${slot.modelId}）`,
-      code: plugin.buildCurl(maskedProfile, request)
-    };
-  } catch (err) {
-    alert(err instanceof Error ? err.message : String(err));
-    return null;
-  }
+  return {
+    title: `cURL（${slot.modelId}）`,
+    code: plugin.buildCurl(maskedProfile, request)
+  };
 }
 
 async function exportCurl(slot: Slot) {
@@ -865,25 +711,6 @@ async function exportCurl(slot: Slot) {
   codeDialogTitle.value = snippet.title;
   codeDialogCode.value = snippet.code;
   codeDialogOpen.value = true;
-}
-
-watch(useCurlPlaceholder, () => {
-  if (!codeDialogOpen.value || !codeDialogSlotId.value) return;
-  const slot = slots.value.find((item) => item.id === codeDialogSlotId.value);
-  if (!slot) return;
-  const snippet = buildCurlSnippet(slot);
-  if (!snippet) return;
-  codeDialogTitle.value = snippet.title;
-  codeDialogCode.value = snippet.code;
-});
-
-// 运行 Slot
-function stopSlot(slotId: string) {
-  abortControllersBySlotId.get(slotId)?.abort();
-}
-
-function stopAllSlots() {
-  Array.from(abortControllersBySlotId.values()).forEach((controller) => controller.abort());
 }
 
 async function runSlot(slot: Slot) {
@@ -962,147 +789,113 @@ async function runSlot(slot: Slot) {
   }
 }
 
-// 模态框保存处理
-function handleVarsSave(variables: typeof shared.variables) {
-  shared.variables = variables;
-  saveEditorState();
+async function runSelected() {
+  await Promise.all(selectedSlots.value.map((slot) => runSlot(slot)));
 }
 
-function handleParamsSave(params: typeof shared.defaultParams) {
-  shared.defaultParams = params;
-  saveEditorState();
+async function runAll() {
+  await Promise.all(slots.value.map((slot) => runSlot(slot)));
 }
 
-function handleToolsSave(toolsDefinition: string) {
-  shared.toolsDefinition = toolsDefinition;
-  saveEditorState();
+function toggleStar(id: string) {
+  historyItems.value = historyItems.value.map((item) =>
+    item.id === id ? { ...item, star: !item.star } : item
+  );
+  queuePersistHistory(historyItems.value);
 }
 
-// 项目管理处理函数
-function handleCreateProject(name: string) {
-  const newProject = createProject(name);
-  if (newProject) {
-    switchProject(newProject.id);
+function loadHistoryIntoEditor(item: HistoryItem) {
+  historyLoadItem.value = item;
+  historyLoadOpen.value = true;
+}
+
+function applyHistoryLoad() {
+  const item = historyLoadItem.value;
+  if (!item) return;
+
+  const targetSlot = selectedSlots.value[0] || slots.value[0] || createSlot();
+  if (!slots.value.length) slots.value = [targetSlot];
+  targetSlot.toolCalls = null;
+
+  const legacyUserPrompt = (item.requestSnapshot as unknown as { userPrompt?: string }).userPrompt;
+  const userPrompts = Array.isArray(item.requestSnapshot.userPrompts)
+    ? item.requestSnapshot.userPrompts
+    : legacyUserPrompt
+      ? [legacyUserPrompt]
+      : [];
+  const historyMessages =
+    Array.isArray(item.requestSnapshot.messages) && item.requestSnapshot.messages.length
+      ? item.requestSnapshot.messages
+      : userPrompts.map((text) => ({ role: 'user', content: text }));
+
+  if (historyLoadOptions.userPrompts) {
+    shared.userPrompts = historyMessages.length
+      ? historyMessages.map((msg) => ({
+          id: newId(),
+          role: msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user',
+          text: typeof msg.content === 'string' ? msg.content : ''
+        }))
+      : [{ id: newId(), role: 'user', text: '' }];
   }
-}
 
-function handleRenameProject(projectId: string, newName: string) {
-  renameProject(projectId, newName);
-}
-
-async function handleDeleteProject(projectId: string) {
-  await deleteProject(projectId);
-}
-
-// cURL 导入处理
-async function handleCurlImport(result: ImportResult) {
-  // 调试日志
-  console.log('[handleCurlImport] result.provider:', result.provider);
-  console.log('[handleCurlImport] result.provider.apiKey:', result.provider.apiKey ? '***' : '(empty)');
-
-  // 如果需要创建新项目
-  if (result.isNewProject && result.newProjectName) {
-    const newProject = createProject(result.newProjectName);
-    if (newProject) {
-      await switchProject(newProject.id);
-    }
-  } else if (result.targetProjectId !== currentProjectId.value) {
-    // 切换到目标项目
-    await switchProject(result.targetProjectId);
+  if (historyLoadOptions.tools) {
+    shared.toolsDefinition = item.requestSnapshot.toolsDefinition;
   }
 
-  // 处理 Provider
-  const provider = result.provider;
-  if (provider.isNew) {
-    // 添加新 Provider
-    const newProvider: ProviderProfile = {
-      id: provider.id,
-      name: provider.name,
-      apiKey: provider.apiKey,
-      baseUrl: provider.baseUrl,
-      pluginId: provider.pluginId,
-    };
-    providerProfiles.value.push(newProvider);
-    saveProfiles();
-  } else {
-    // 更新现有 Provider 的 API Key
-    const existingIndex = providerProfiles.value.findIndex(p => p.id === provider.id);
-    if (existingIndex >= 0 && provider.apiKey) {
-      providerProfiles.value[existingIndex] = {
-        ...providerProfiles.value[existingIndex],
-        apiKey: provider.apiKey,
-      };
+  if (historyLoadOptions.provider && item.providerProfileSnapshot) {
+    const snap = item.providerProfileSnapshot;
+    const existing = providerProfiles.value.find((p) => p.id === snap.id);
+    if (!existing) {
+      providerProfiles.value.push({ ...snap });
       saveProfiles();
     }
+    targetSlot.providerProfileId = snap.id;
+    targetSlot.pluginId = snap.pluginId;
+    refreshModelsForSlot(targetSlot);
   }
 
-  // 决定是覆盖还是创建新 Slot
-  const shouldOverwrite = shouldOverwriteSlot(slots.value);
-  let targetSlot: Slot;
-
-  if (shouldOverwrite) {
-    // 覆盖现有 Slot
-    targetSlot = slots.value[0];
-    targetSlot.providerProfileId = provider.id;
-    targetSlot.pluginId = provider.pluginId;
-    targetSlot.modelId = result.modelId || '';
-    if (result.systemPrompt) {
-      targetSlot.systemPrompt = result.systemPrompt;
-    }
-  } else {
-    // 创建新 Slot
-    targetSlot = createSlot();
-    targetSlot.providerProfileId = provider.id;
-    targetSlot.pluginId = provider.pluginId;
-    targetSlot.modelId = result.modelId || '';
-    if (result.systemPrompt) {
-      targetSlot.systemPrompt = result.systemPrompt;
-    }
-    slots.value.push(targetSlot);
+  if (historyLoadOptions.model) {
+    targetSlot.modelId = item.requestSnapshot.modelId || '';
   }
 
-  // 导入消息（如果选择了）
-  if (result.importMessages && result.messages && result.messages.length > 0) {
-    shared.userPrompts = result.messages.map(msg => ({
-      id: newId(),
-      role: (msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user') as 'user' | 'system' | 'assistant',
-      text: msg.content,
-    }));
+  historyLoadOptions.systemPrompt = true;
+  targetSlot.systemPrompt = item.requestSnapshot.systemPrompt || '';
+
+  if (historyLoadOptions.params) {
+    targetSlot.paramOverride = item.requestSnapshot.params ? { ...(item.requestSnapshot.params as Record<string, unknown>) } : null;
   }
 
-  // 等待 Vue 响应式更新完成
-  await nextTick();
-
-  // 刷新模型列表
-  await refreshModelsForSlot(targetSlot);
-
-  // 设置高亮动画
-  highlightedSlotId.value = targetSlot.id;
-  setTimeout(() => {
-    highlightedSlotId.value = null;
-  }, 2000);
-
-  // 滚动到新 Slot（如果是新创建的）
-  if (!shouldOverwrite) {
-    await nextTick();
-    const slotElement = document.querySelector(`[data-slot-id="${targetSlot.id}"]`);
-    slotElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (historyLoadOptions.output) {
+    targetSlot.output = item.responseSnapshot.outputText || '';
+    targetSlot.status = targetSlot.output ? 'done' : 'idle';
+    targetSlot.historyId = item.id;
+    targetSlot.toolCalls = item.responseSnapshot.toolCalls ?? null;
   }
 
-  saveEditorState();
+  if (historyLoadOptions.metrics) {
+    targetSlot.metrics = {
+      ...targetSlot.metrics,
+      ttfbMs: item.responseSnapshot.metrics?.ttfbMs ?? null,
+      totalMs: item.responseSnapshot.metrics?.totalMs ?? null,
+      tokens: item.responseSnapshot.usage
+    };
+  }
+
+  historyLoadOpen.value = false;
+  historyLoadItem.value = null;
 }
 
-// 键盘快捷键
-function handleGlobalKeydown(event: KeyboardEvent) {
-  const wantsStop = (event.ctrlKey || event.metaKey) && (event.key === '.' || event.code === 'Period');
-  if (wantsStop && hasRunningSlots.value) {
-    event.preventDefault();
-    stopAllSlots();
-    return;
+onMounted(async () => {
+  resetNewProfile();
+  loadProfiles();
+  loadEditorState();
+  if (!slots.value.length) {
+    slots.value = [createSlot()];
   }
-}
+  await Promise.all(slots.value.map((slot) => refreshModelsForSlot(slot)));
+  await loadHistory();
+});
 
-// 页面离开提示
 const hasEditedSinceLoad = ref(false);
 const loadedEditorSignature = ref<string | null>(null);
 const editorSignature = computed(() => JSON.stringify(serializeEditorState()));
@@ -1129,23 +922,7 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = '';
 }
 
-// 生命周期
-onMounted(async () => {
-  // 执行数据迁移（如果需要）
-  await migrateToProjectNamespace();
-  
-  // 初始化项目管理器
-  projectManager.initialize();
-  
-  resetNewProfile();
-  loadProfiles();
-  loadEditorState();
-  if (!slots.value.length) {
-    slots.value = [createSlot()];
-  }
-  await Promise.all(slots.value.map((slot) => refreshModelsForSlot(slot)));
-  await loadHistory();
-  
+onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   window.addEventListener('keydown', handleGlobalKeydown);
 });
@@ -1172,122 +949,211 @@ watch(
 </script>
 
 <template>
-  <div id="app" class="app" :data-theme="theme">
-    <!-- 顶部工具栏 -->
-    <AppToolbar
-      :project-options="sortedProjects.map(p => ({ id: p.id, label: p.name }))"
-      :selected-project="currentProjectId"
-      :theme="theme"
-      @update:selected-project="switchProject"
-      @toggle-theme="toggleTheme"
-      @open-provider="showProviderManager = true"
-      @open-params="showParamsModal = true"
-      @open-tools="showToolsModal = true"
-      @open-vars="showVarsModal = true"
-      @open-history="showHistory = true"
-      @add-slot="addSlot()"
-      @add-message="addUserMessage()"
-      @import-curl="showCurlImportModal = true"
-    >
-      <template #project-selector>
-        <ProjectSelector
-          :projects="sortedProjects"
-          :current-project-id="currentProjectId"
-          @select="switchProject"
-          @create="handleCreateProject"
-          @rename="handleRenameProject"
-          @delete="handleDeleteProject"
-        />
-      </template>
-    </AppToolbar>
-    
-    <!-- 主工作区 -->
-    <MainWorkspace>
-      <template #composer>
-        <PromptComposer v-model:messages="shared.userPrompts" />
-      </template>
-      
-      <template #slots>
-        <SlotsGrid
-          :slots="slots"
-          :provider-profiles="providerProfiles"
-          :model-options-map="modelOptionsMap"
-          :refreshing-models-map="refreshingModelsMap"
-          :stream-output="shared.streamOutput"
-          :default-params="shared.defaultParams"
-          :build-request-for-slot="buildRequest"
-          :highlighted-slot-id="highlightedSlotId"
-          @add-slot="addSlot()"
-          @copy-slot="copySlot"
-          @remove-slot="requestRemoveSlot"
-          @run-slot="runSlot"
-          @stop-slot="stopSlot"
-          @provider-change="onProviderChange"
-          @refresh-models="forceRefreshModels"
-          @update:slot="updateSlot"
-        />
-      </template>
-    </MainWorkspace>
-    
-    <!-- 模态框 -->
-    <VarsModal
-      :open="showVarsModal"
-      :variables="shared.variables"
-      @update:open="showVarsModal = $event"
-      @save="handleVarsSave"
-    />
-    
-    <ParamsModal
-      :open="showParamsModal"
-      :default-params="shared.defaultParams"
-      @update:open="showParamsModal = $event"
-      @save="handleParamsSave"
-    />
-    
-    <ToolsModal
-      :open="showToolsModal"
-      :tools-definition="shared.toolsDefinition"
-      @update:open="showToolsModal = $event"
-      @save="handleToolsSave"
-    />
-    
-    <!-- cURL 导入弹窗 -->
-    <CurlImportModal
-      :open="showCurlImportModal"
-      :projects="sortedProjects"
-      :current-project-id="currentProjectId"
-      :provider-profiles="providerProfiles"
-      @update:open="showCurlImportModal = $event"
-      @import="handleCurlImport"
-    />
-    
-    <!-- Provider 管理面板 -->
-    <ProviderPanel
-      v-if="showProviderManager"
+  <div class="app-shell">
+    <AppHeader :project-options="projectOptions" v-model:selected-project="selectedProjectId" :theme="theme" @toggleTheme="toggleTheme" />
+
+    <div class="workspace" ref="workspaceRef">
+      <NLayout class="workspace-layout" has-sider sider-placement="left" style="background: transparent">
+        <NLayoutSider
+          class="workspace-layout__sider"
+          collapse-mode="width"
+          :collapsed-width="0"
+          :width="leftSidebarWidthPx"
+          :collapsed="leftSidebarHidden"
+          :show-collapsed-content="false"
+          content-style="background: transparent;"
+          style="background: transparent;"
+        >
+          <aside id="workspace-left-sidebar" class="workspace-sidebar">
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">Projects</div>
+              <div class="sidebar-list">
+                <button
+                  v-for="project in projectOptions"
+                  :key="project.id"
+                  class="sidebar-item"
+                  :class="{ active: selectedProjectId === project.id }"
+                  @click="selectedProjectId = project.id"
+                >
+                  <span class="sidebar-item__name">{{ project.label }}</span>
+                  <span class="sidebar-item__badge">Live</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">
+                Providers
+                <button class="text-button" @click="showProviderManager = true">管理</button>
+              </div>
+              <div class="providers-list">
+                <div v-if="!providerProfiles.length" class="sidebar-empty">暂无 Provider</div>
+                <button
+                  v-for="profile in providerProfiles"
+                  :key="profile.id"
+                  class="provider-chip"
+                  @click="showProviderManager = true"
+                >
+                  <span class="dot dot--success"></span>
+                  <div class="provider-chip__info">
+                    <div class="provider-chip__name">{{ profile.name }}</div>
+                    <div class="provider-chip__meta">{{ plugins.find((p) => p.id === profile.pluginId)?.name }}</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section__title">
+                Runs History
+                <button class="text-button" @click="showHistory = true">全部</button>
+              </div>
+              <div class="runs-list">
+                <button
+                  v-for="run in recentHistory"
+                  :key="run.id"
+                  class="run-entry"
+                  @click="loadHistoryIntoEditor(run)"
+                >
+                  <div class="run-entry__title">{{ run.title }}</div>
+                  <div class="run-entry__meta">
+                    <span>{{ new Date(run.createdAt).toLocaleTimeString() }}</span>
+                    <span>{{ run.requestSnapshot.modelId }}</span>
+                  </div>
+                </button>
+                <div v-if="!recentHistory.length" class="sidebar-empty">暂无运行记录</div>
+              </div>
+            </div>
+          </aside>
+        </NLayoutSider>
+
+        <NLayout class="workspace-layout__inner" has-sider sider-placement="right" style="background: transparent">
+          <div class="workspace-layout__main">
+            <main class="workspace-main">
+              <section class="panel composer-panel card">
+                <PromptComposer v-model:messages="shared.userPrompts" />
+              </section>
+
+              <section class="panel slots-panel card">
+                <SlotsSection
+                  :slots="slots"
+                  :providerProfiles="providerProfiles"
+                  :streamOutput="shared.streamOutput"
+                  :refreshingModelsBySlotId="refreshingModelsBySlotId"
+                  :modelOptions="modelOptions"
+                  :defaultParams="shared.defaultParams"
+                  :showParamDiffOnly="showParamDiffOnly"
+                  @copy="addSlot"
+                  @remove="requestRemoveSlot"
+                  @run="runSlot"
+                  @stop="stopSlot"
+                  @export-curl="exportCurl"
+                  @provider-change="onProviderChange"
+                  @refresh-models="forceRefreshModels"
+                  @runSelected="runSelected"
+                  @runAll="runAll"
+                  @stopAll="stopAllSlots"
+                />
+              </section>
+            </main>
+          </div>
+
+          <NLayoutSider
+            class="workspace-layout__sider workspace-layout__sider--right"
+            collapse-mode="width"
+            :collapsed-width="0"
+            :width="rightPanelWidthPx"
+            :collapsed="rightPanelHidden"
+            :show-collapsed-content="false"
+            content-style="background: transparent;"
+            style="background: transparent;"
+          >
+            <ContextPanel
+              id="workspace-right-panel"
+              class="context-panel"
+              :shared="shared"
+              v-model:activeTab="contextPanelTab"
+              v-model:showDiffOnly="showParamDiffOnly"
+            />
+          </NLayoutSider>
+        </NLayout>
+      </NLayout>
+
+      <div class="folding-handle folding-handle--left" :style="leftPanelToggleStyle">
+        <button
+          type="button"
+          class="folding-handle__button"
+          :class="{ 'is-collapsed': leftSidebarHidden }"
+          @click="leftSidebarHidden = !leftSidebarHidden"
+          :aria-pressed="leftSidebarHidden"
+          aria-controls="workspace-left-sidebar"
+          :aria-label="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+          :title="leftSidebarHidden ? '展开左栏' : '隐藏左栏'"
+        >
+          <span class="sr-only">{{ leftSidebarHidden ? '展开左栏' : '隐藏左栏' }}</span>
+          <span class="folding-handle__icon" aria-hidden="true">
+            <svg v-if="leftSidebarHidden" viewBox="0 0 24 24" focusable="false">
+              <path d="M9 12l6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" focusable="false">
+              <path d="M15 12l-6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      <div class="folding-handle folding-handle--right" :style="rightPanelToggleStyle">
+        <button
+          type="button"
+          class="folding-handle__button"
+          :class="{ 'is-collapsed': rightPanelHidden }"
+          @click="rightPanelHidden = !rightPanelHidden"
+          :aria-pressed="rightPanelHidden"
+          aria-controls="workspace-right-panel"
+          :aria-label="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+          :title="rightPanelHidden ? '展开右栏' : '隐藏右栏'"
+        >
+          <span class="sr-only">{{ rightPanelHidden ? '展开右栏' : '隐藏右栏' }}</span>
+          <span class="folding-handle__icon" aria-hidden="true">
+            <svg v-if="rightPanelHidden" viewBox="0 0 24 24" focusable="false">
+              <path d="M15 12l-6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" focusable="false">
+              <path d="M9 12l6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+    </div>
+
+  <ProviderPanel
+    v-if="showProviderManager"
       :plugins="plugins"
-      :provider-profiles="providerProfiles"
-      :new-profile="newProfile"
-      :default-provider-template="defaultProviderTemplate"
-      :on-reset-new-profile="resetNewProfile"
-      :on-add-profile="addProfile"
-      :on-remove-profile="requestRemoveProfile"
-      :on-export-providers="exportProvidersEncryptedZip"
-      :on-import-providers="requestImportProvidersEncryptedZip"
-      :on-clear-keys="requestClearProviderApiKeys"
+      :providerProfiles="providerProfiles"
+      :newProfile="newProfile"
+      :defaultProviderTemplate="defaultProviderTemplate"
+      :onResetNewProfile="resetNewProfile"
+      :onAddProfile="addProfile"
+      :onRemoveProfile="requestRemoveProfile"
+      :onExportProviders="exportProvidersEncryptedZip"
+      :onImportProviders="requestImportProvidersEncryptedZip"
+      :onClearKeys="requestClearProviderApiKeys"
       @close="showProviderManager = false"
     />
-    
-    <!-- 历史抽屉 -->
+
     <HistoryDrawer
-      :open="showHistory"
+      v-if="showHistory"
       :items="historyItems"
-      @update:open="showHistory = $event"
+      @close="showHistory = false"
       @load="loadHistoryIntoEditor"
       @toggle-star="toggleStar"
-      @delete="deleteHistoryItem"
     />
-    
-    <!-- 历史加载对话框 -->
+
     <HistoryLoadDialog
       :open="historyLoadOpen"
       :item="historyLoadItem"
@@ -1295,8 +1161,7 @@ watch(
       @close="historyLoadOpen = false"
       @confirm="applyHistoryLoad"
     />
-    
-    <!-- 代码对话框 -->
+
     <CodeDialog
       :open="codeDialogOpen"
       :title="codeDialogTitle"
@@ -1304,8 +1169,7 @@ watch(
       v-model:usePlaceholder="useCurlPlaceholder"
       @close="closeCodeDialog"
     />
-    
-    <!-- 确认对话框 -->
+
     <ConfirmDialog
       :open="confirmDialogOpen"
       :title="confirmDialogTitle"
@@ -1317,13 +1181,3 @@ watch(
     />
   </div>
 </template>
-
-<style>
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  color: var(--text-primary);
-}
-</style>

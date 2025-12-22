@@ -1,0 +1,125 @@
+# Implementation Plan
+
+- [x] 1. 创建核心类型定义和存储服务
+  - [x] 1.1 添加 ProjectMetadata 类型到 types.ts
+    - 定义 id, name, createdAt, updatedAt 字段
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+  - [x] 1.2 创建 StorageService 模块 (src/lib/storage.ts)
+    - 实现 getNamespacedKey 函数，根据 projectId 生成命名空间化的存储 key
+    - 实现 localStorage 封装方法 (getItem, setItem, removeItem)
+    - 实现 IndexedDB 实例工厂方法 (getHistoryStore, getModelCacheStore)
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
+  - [x] 1.3 编写 StorageService 属性测试
+    - **Property 12: Storage Keys Namespaced by Project ID**
+    - **Property 13: Theme Storage Key is Global**
+    - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
+
+- [x] 2. 实现 useProjectManager composable
+  - [x] 2.1 创建 useProjectManager.ts (src/composables/useProjectManager.ts)
+    - 实现 projects 响应式列表
+    - 实现 currentProjectId 响应式状态
+    - 实现 currentProject 计算属性
+    - 实现 DEFAULT_PROJECT 常量
+    - _Requirements: 2.4, 6.2_
+  - [x] 2.2 实现项目 CRUD 操作
+    - createProject: 验证名称，生成唯一 ID，添加到列表
+    - renameProject: 验证名称，更新项目元数据
+    - deleteProject: 清理项目数据，处理活动项目删除
+    - _Requirements: 1.2, 1.3, 3.2, 3.3, 4.2, 4.3, 4.4_
+  - [x] 2.3 实现项目切换逻辑
+    - switchProject: 保存当前状态，加载目标项目状态
+    - 实现 onBeforeSwitch 和 onAfterSwitch 回调
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 2.4 实现初始化和持久化
+    - initialize: 加载项目列表，恢复上次活动项目
+    - 实现项目列表自动持久化 (watch)
+    - _Requirements: 2.4_
+  - [x] 2.5 编写 useProjectManager 属性测试
+    - **Property 1: Valid Project Name Creates Project with Unique ID**
+    - **Property 2: Whitespace-Only Names Rejected for Creation**
+    - **Property 3: New Projects Start with Empty State**
+    - **Property 6: Last Active Project Restored on Init**
+    - **Property 7: Valid Rename Updates and Persists**
+    - **Property 8: Whitespace-Only Names Rejected for Rename**
+    - **Property 10: Deleting Active Project Switches to Default**
+    - **Property 14: Projects Sorted by Last Used Time**
+    - **Validates: Requirements 1.2, 1.3, 1.4, 2.4, 3.2, 3.3, 4.3, 6.2**
+
+- [x] 3. Checkpoint - 确保所有测试通过
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 4. 创建 ProjectSelector 组件
+  - [x] 4.1 创建 ProjectSelector.vue (src/components/layout/ProjectSelector.vue)
+    - 实现下拉触发器，显示当前项目名称
+    - 实现下拉菜单，显示项目列表
+    - 实现 "新建项目" 按钮
+    - _Requirements: 6.1, 6.2, 6.4_
+  - [x] 4.2 实现项目项 UI
+    - 显示项目名称
+    - 悬停时显示操作按钮（重命名、删除）
+    - 默认项目不显示删除按钮
+    - _Requirements: 6.3, 4.4_
+  - [x] 4.3 实现新建项目模态框
+    - 名称输入框，带验证
+    - 确认/取消按钮
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 4.4 实现重命名功能
+    - 内联编辑模式
+    - 名称验证
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 4.5 实现删除功能
+    - 确认对话框
+    - 调用 deleteProject
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+
+- [x] 5. 集成到 App.vue
+  - [x] 5.1 重构 App.vue 存储逻辑
+    - 引入 useProjectManager
+    - 将 localStorage key 替换为 StorageService 调用
+    - 将 localforage 实例替换为 StorageService 工厂方法
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+  - [x] 5.2 实现项目切换时的状态保存/加载
+    - 在 switchProject 前保存当前编辑器状态
+    - 在 switchProject 后加载目标项目状态
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 5.3 更新 AppToolbar 集成
+    - 替换硬编码的 projectOptions 为动态项目列表
+    - 使用 ProjectSelector 组件替换原有 Select
+    - 连接项目管理事件
+    - _Requirements: 6.1, 6.2_
+  - [x] 5.4 编写项目切换属性测试
+    - **Property 4: Project Switch Round-Trip Preserves State**
+    - **Property 5: Project Data Loads Correctly After Switch**
+    - **Validates: Requirements 2.1, 2.2**
+
+- [x] 6. 实现数据迁移
+  - [x] 6.1 创建迁移函数
+    - 检测旧格式数据
+    - 迁移到 default 项目命名空间
+    - 标记迁移完成
+    - _Requirements: 5.1, 5.2_
+  - [x] 6.2 在应用启动时执行迁移
+    - 在 onMounted 中调用迁移函数
+    - 迁移完成后再初始化项目管理器
+    - _Requirements: 2.4_
+
+- [x] 7. 实现错误处理
+  - [x] 7.1 实现存储降级逻辑
+    - 检测 localStorage 可用性
+    - 实现内存模式降级
+    - _Requirements: 7.1_
+  - [x] 7.2 实现 IndexedDB 重试和降级
+    - 操作失败时重试一次
+    - 重试失败后降级到 localStorage
+    - _Requirements: 7.2_
+  - [x] 7.3 添加错误日志
+    - 存储错误时输出详细日志
+    - _Requirements: 7.3_
+  - [x] 7.4 编写删除失败属性测试
+    - **Property 9: Project Deletion Removes All Storage Data**
+    - **Property 11: Storage Deletion Failure Preserves Project**
+    - **Validates: Requirements 4.2, 4.5**
+
+- [x] 8. Final Checkpoint - 确保所有测试通过
+  - Ensure all tests pass, ask the user if questions arise.
+

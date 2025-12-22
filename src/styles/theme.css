@@ -4,14 +4,37 @@
   font-weight: 500;
   --radius: 6px;
   --radius-sm: 4px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+  
+  /* 间距系统 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* 动画时间变量 */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-drawer: 250ms;
+  
+  /* 缓动函数 */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
   --bg: #f6f7fb;
   --bg2: #eef2ff;
+  --bg-secondary: #fafafa;
   --card: rgba(255, 255, 255, 0.94);
   --card-solid: #ffffff;
+  --card-bg: rgba(0, 0, 0, 0.02);
+  --hover-bg: rgba(0, 0, 0, 0.04);
   --stroke: rgba(15, 23, 42, 0.1);
   --stroke-strong: rgba(15, 23, 42, 0.14);
   --text: #0b1220;
@@ -41,14 +64,45 @@
   --success: var(--state-done);
   --danger: var(--state-error);
   --shadow-soft: var(--shadow);
+  
+  /* LangUI 对话气泡颜色 - 浅色主题 */
+  --bubble-user-bg: #e3f2fd;
+  --bubble-assistant-bg: #f5f5f5;
+  --bubble-system-bg: #fff3e0;
+  --bubble-error-bg: #ffebee;
+  
+  /* Ant Design Vue 主色 */
+  --primary-color: #1890ff;
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --error-color: #ff4d4f;
+  --error-bg: #fff2f0;
+  --info-color: #1890ff;
+  
+  /* 文本颜色 */
+  --text-primary: #262626;
+  --text-secondary: #595959;
+  --text-tertiary: #8c8c8c;
+  
+  /* 代码块背景 */
+  --code-bg: #f6f8fa;
+  
+  /* 徽章背景 */
+  --badge-bg: rgba(0, 0, 0, 0.04);
+  
+  /* 边框颜色 */
+  --border-color: #e8e8e8;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #030712;
   --bg2: #0b1224;
+  --bg-secondary: #1a202c;
   --card: rgba(13, 17, 23, 0.92);
   --card-solid: #0f172a;
+  --card-bg: rgba(255, 255, 255, 0.04);
+  --hover-bg: rgba(255, 255, 255, 0.08);
   --stroke: rgba(148, 163, 184, 0.28);
   --stroke-strong: rgba(148, 163, 184, 0.4);
   --text: #e2e8f0;
@@ -77,4 +131,32 @@
   --success: var(--state-done);
   --danger: var(--state-error);
   --shadow-soft: var(--shadow);
+  
+  /* LangUI 对话气泡颜色 - 暗色主题 */
+  --bubble-user-bg: #1a365d;
+  --bubble-assistant-bg: #2d3748;
+  --bubble-system-bg: #744210;
+  --bubble-error-bg: #742a2a;
+  
+  /* Ant Design Vue 主色 - 暗色主题 */
+  --primary-color: #177ddc;
+  --success-color: #49aa19;
+  --warning-color: #d89614;
+  --error-color: #d32029;
+  --error-bg: #2a1215;
+  --info-color: #177ddc;
+  
+  /* 文本颜色 - 暗色主题 */
+  --text-primary: #e2e8f0;
+  --text-secondary: #a0aec0;
+  --text-tertiary: #718096;
+  
+  /* 代码块背景 - 暗色主题 */
+  --code-bg: #1a202c;
+  
+  /* 徽章背景 - 暗色主题 */
+  --badge-bg: rgba(255, 255, 255, 0.08);
+  
+  /* 边框颜色 - 暗色主题 */
+  --border-color: #303030;
 }

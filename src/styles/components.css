@@ -1434,10 +1434,16 @@ body {
 .code-dialog__editor {
   flex: 1 1 auto;
   min-height: 360px;
+  overflow: hidden;
 }
 
 .code-dialog__editor .cm-editor {
+  height: 100%;
   min-height: 360px;
+}
+
+.code-dialog__editor .cm-scroller {
+  overflow: auto !important;
 }
 
 .slots-lab__head {

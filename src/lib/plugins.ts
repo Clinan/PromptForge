@@ -1,4 +1,5 @@
 import type { Plugin, ProviderProfile, ToolCall, PluginChunk } from '../types';
+import { assertToolsDefinition } from './tools';
 
 type PluginRequest = import('../types').PluginRequest;
 type PluginInvokeOptions = import('../types').PluginInvokeOptions;
@@ -15,53 +16,7 @@ type OpenAICompatibleConfig = {
 };
 
 function parseTools(toolsDefinition: string) {
-  try {
-    if (!toolsDefinition || !toolsDefinition.trim()) return undefined;
-    const parsed = JSON.parse(toolsDefinition) as unknown;
-    const rawTools = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === 'object' && Array.isArray((parsed as any).tools)
-        ? ((parsed as any).tools as unknown[])
-        : null;
-
-    if (!rawTools) return undefined;
-    if (rawTools.length === 0) return [];
-
-    const looksLikeOpenAITools = rawTools.every(
-      (t) => t && typeof t === 'object' && typeof (t as any).type === 'string'
-    );
-    if (looksLikeOpenAITools) return rawTools;
-
-    const looksLikeFunctionList = rawTools.every(
-      (t) => t && typeof t === 'object' && typeof (t as any).name === 'string'
-    );
-    if (looksLikeFunctionList) {
-      return rawTools.map((t) => {
-        const parameters =
-          (t as any).parameters ||
-          (t as any).schema ||
-          (t as any).json_schema ||
-          (t as any).input_schema || {
-            type: 'object',
-            properties: {},
-            additionalProperties: true
-          };
-        return {
-          type: 'function',
-          function: {
-            name: (t as any).name,
-            description: typeof (t as any).description === 'string' ? (t as any).description : undefined,
-            parameters
-          }
-        };
-      });
-    }
-
-    return rawTools;
-  } catch (err) {
-    console.warn('工具定义 JSON 解析失败，将忽略 tools。', err);
-    return undefined;
-  }
+  return assertToolsDefinition(toolsDefinition);
 }
 
 function removeEmptyEntries(obj: Record<string, unknown>) {
