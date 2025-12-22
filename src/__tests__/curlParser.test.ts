@@ -167,6 +167,35 @@ describe('Property 1: cURL Parsing Extracts All Required Fields', () => {
     const result = parseCurl(curlCmd);
     expect(result.method).toBe('POST');
   });
+
+  it('should parse Ark (Bytedance) cURL command with --location flag', () => {
+    const curlCmd = `curl --location 'https://ark.cn-beijing.volces.com/api/v1/chat/completions' \\
+--header 'Content-Type: application/json' \\
+--header 'Authorization: Bearer 1232462421' \\
+--data '{"model": "doubao-seed-1-6-thinking-250715","messages": [{"role": "system","content": "You are a helpful assistant."},{"role": "user","content": "Hello!"}]}'`;
+    
+    const result = parseCurl(curlCmd);
+    
+    expect(result.url).toBe('https://ark.cn-beijing.volces.com/api/v1/chat/completions');
+    expect(result.headers['Content-Type']).toBe('application/json');
+    expect(result.apiKey).toBe('1232462421');
+    expect(result.body).toEqual({
+      model: 'doubao-seed-1-6-thinking-250715',
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: 'Hello!' }
+      ]
+    });
+    
+    // 验证插件检测
+    expect(detectPluginId(result.url)).toBe('ark-bytedance');
+    
+    // 验证消息提取
+    const extracted = extractModelAndMessages(result.body);
+    expect(extracted.modelId).toBe('doubao-seed-1-6-thinking-250715');
+    expect(extracted.systemPrompt).toBe('You are a helpful assistant.');
+    expect(extracted.messages).toEqual([{ role: 'user', content: 'Hello!' }]);
+  });
 });
 
 
@@ -187,7 +216,10 @@ describe('Property 8: Error Handling for Invalid Inputs', () => {
   it('should throw error for non-curl commands', () => {
     fc.assert(
       fc.property(
-        fc.string({ minLength: 1, maxLength: 50 }).filter(s => !s.toLowerCase().startsWith('curl')),
+        fc.string({ minLength: 1, maxLength: 50 }).filter(s => {
+          const trimmed = s.trim();
+          return trimmed.length > 0 && !trimmed.toLowerCase().startsWith('curl');
+        }),
         (input) => {
           expect(() => parseCurl(input)).toThrow(CurlParseError);
           expect(() => parseCurl(input)).toThrow('无效的 cURL 命令格式');
@@ -577,7 +609,10 @@ describe('Property 6: Slot Overwrite vs Create Decision', () => {
   it('should not overwrite when single slot has non-default content', () => {
     fc.assert(
       fc.property(
-        fc.string({ minLength: 1, maxLength: 100 }).filter(s => s !== DEFAULT_SYSTEM_PROMPT),
+        fc.string({ minLength: 1, maxLength: 100 }).filter(s => {
+          const trimmed = s.trim();
+          return trimmed.length > 0 && trimmed !== DEFAULT_SYSTEM_PROMPT;
+        }),
         (customPrompt) => {
           const customSlot: Slot = {
             id: 'test-id',

@@ -248,6 +248,7 @@ async function handleImport() {
           :options="projectOptions"
           :disabled="loading"
           style="width: 100%"
+          :getPopupContainer="(triggerNode: HTMLElement) => triggerNode.parentNode as HTMLElement"
           @change="handleProjectChange"
         />
       </div>

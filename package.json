@@ -20,6 +20,8 @@
     "codemirror": "^6.0.2",
     "localforage": "^1.10.0",
     "naive-ui": "^2.43.2",
+    "parse-curl": "^0.2.6",
+    "parse-curl-js": "^1.0.3",
     "vue": "^3.4.21",
     "vue-codemirror": "^6.1.1"
   },
