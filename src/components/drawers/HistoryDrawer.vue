@@ -5,7 +5,7 @@
  * 
  * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5
  */
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { 
   Drawer, 
   Input, 
@@ -26,9 +26,10 @@ import {
   ClockCircleOutlined,
   RobotOutlined,
   ThunderboltOutlined,
-  ExpandOutlined
+  ToolOutlined
 } from '@ant-design/icons-vue';
 import type { HistoryItem } from '../../types';
+import JsonEditor from '../JsonEditor.vue';
 
 const { Search: InputSearch } = Input;
 const { Text, Paragraph } = Typography;
@@ -173,6 +174,46 @@ function truncateText(text: string, maxLength: number = 100): string {
   return text.slice(0, maxLength) + '...';
 }
 
+/**
+ * 构建 System Prompt + User Prompt 的组合文本
+ * 用于在 CodeMirror 中展示完整的 prompt 内容
+ */
+function buildPromptContent(item: HistoryItem): string {
+  const parts: string[] = [];
+  
+  // System Prompt
+  if (item.requestSnapshot.systemPrompt) {
+    parts.push('### System Prompt ###');
+    parts.push(item.requestSnapshot.systemPrompt);
+  }
+  
+  // User Prompt(s)
+  if (Array.isArray(item.requestSnapshot.userPrompts) && item.requestSnapshot.userPrompts.length) {
+    parts.push('');
+    parts.push('### User Prompt ###');
+    parts.push(item.requestSnapshot.userPrompts.join('\n\n'));
+  } else if (Array.isArray(item.requestSnapshot.messages) && item.requestSnapshot.messages.length) {
+    const userMessages = item.requestSnapshot.messages
+      .filter(m => (m as { role?: string }).role === 'user')
+      .map(m => (m as { content?: string }).content || '')
+      .filter(Boolean);
+    if (userMessages.length) {
+      parts.push('');
+      parts.push('### User Prompt ###');
+      parts.push(userMessages.join('\n\n'));
+    }
+  }
+  
+  return parts.join('\n');
+}
+
+/**
+ * 检查是否有 tools 定义
+ */
+function hasTools(item: HistoryItem): boolean {
+  return Boolean(item.requestSnapshot.toolsDefinition?.trim());
+}
+
 function getDisplayTitle(item: HistoryItem): string {
   if (item.title) return item.title;
   
@@ -292,6 +333,42 @@ function getDisplayTitle(item: HistoryItem): string {
                 class="item-details"
               >
                 <Collapse.Panel :key="item.id" :show-arrow="false">
+                  <!-- Prompt 内容 (System + User) -->
+                  <div class="detail-section">
+                    <Text type="secondary" class="detail-label">Prompt 内容</Text>
+                    <div class="prompt-editor-wrapper">
+                      <JsonEditor
+                        :model-value="buildPromptContent(item)"
+                        :readonly="true"
+                        language="text"
+                        placeholder="无 Prompt 内容"
+                      />
+                    </div>
+                  </div>
+                  
+                  <!-- Tools 定义 (默认折叠) -->
+                  <div v-if="hasTools(item)" class="detail-section">
+                    <Collapse :bordered="false" class="tools-collapse">
+                      <Collapse.Panel key="tools">
+                        <template #header>
+                          <Space :size="4">
+                            <ToolOutlined />
+                            <Text type="secondary">Tools 定义</Text>
+                          </Space>
+                        </template>
+                        <div class="tools-editor-wrapper">
+                          <JsonEditor
+                            :model-value="item.requestSnapshot.toolsDefinition"
+                            :readonly="true"
+                            language="json"
+                            placeholder="无 Tools 定义"
+                          />
+                        </div>
+                      </Collapse.Panel>
+                    </Collapse>
+                  </div>
+                  
+                  <!-- 输出预览 -->
                   <div class="detail-section">
                     <Text type="secondary" class="detail-label">输出预览</Text>
                     <Paragraph 
@@ -470,6 +547,32 @@ function getDisplayTitle(item: HistoryItem): string {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
+}
+
+.prompt-editor-wrapper {
+  height: 160px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.tools-collapse {
+  background: transparent !important;
+}
+
+.tools-collapse :deep(.ant-collapse-header) {
+  padding: 8px 0 !important;
+}
+
+.tools-collapse :deep(.ant-collapse-content-box) {
+  padding: 0 !important;
+}
+
+.tools-editor-wrapper {
+  height: 120px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
 .item-actions {
