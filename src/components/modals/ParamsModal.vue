@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * ParamsModal - Slot 自定义参数配置弹窗
- * 允许用户为单个 Slot 覆盖默认参数（temperature, top_p, max_tokens 等）
+ * 允许用户为单个 Slot 覆盖默认参数（temperature, top_p, max_tokens, thinking 等）
  */
 import { ref, watch, computed } from 'vue';
-import { Modal, Form, InputNumber, Switch, Space, Button, Tooltip } from 'ant-design-vue';
-import { InfoCircleOutlined, UndoOutlined } from '@ant-design/icons-vue';
-import type { SharedState } from '../../types';
+import { Modal, Form, InputNumber, Switch, Button, Tooltip, Divider } from 'ant-design-vue';
+import { InfoCircleOutlined, UndoOutlined, BulbOutlined } from '@ant-design/icons-vue';
+import type { SharedState, ThinkingConfig } from '../../types';
 
 const props = defineProps<{
   open: boolean;
@@ -24,11 +24,17 @@ const localParams = ref<{
   temperature: number | undefined;
   top_p: number | undefined;
   max_tokens: number | undefined;
+  stream: boolean | undefined;
+  thinking_enabled: boolean | undefined;
+  thinking_budget_tokens: number | undefined;
   useCustom: boolean;
 }>({
   temperature: undefined,
   top_p: undefined,
   max_tokens: undefined,
+  stream: undefined,
+  thinking_enabled: undefined,
+  thinking_budget_tokens: undefined,
   useCustom: false
 });
 
@@ -36,10 +42,14 @@ const localParams = ref<{
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
     if (props.paramOverride) {
+      const thinking = props.paramOverride.thinking as ThinkingConfig | undefined;
       localParams.value = {
         temperature: props.paramOverride.temperature as number | undefined,
         top_p: props.paramOverride.top_p as number | undefined,
         max_tokens: props.paramOverride.max_tokens as number | undefined,
+        stream: props.paramOverride.stream as boolean | undefined,
+        thinking_enabled: thinking?.enabled,
+        thinking_budget_tokens: thinking?.budget_tokens,
         useCustom: true
       };
     } else {
@@ -47,29 +57,37 @@ watch(() => props.open, (isOpen) => {
         temperature: undefined,
         top_p: undefined,
         max_tokens: undefined,
+        stream: undefined,
+        thinking_enabled: undefined,
+        thinking_budget_tokens: undefined,
         useCustom: false
       };
     }
   }
 }, { immediate: true });
 
+// 默认 thinking 配置
+const defaultThinking = computed(() => props.defaultParams.thinking);
+
 // 是否有自定义值
 const hasCustomValues = computed(() => {
   return localParams.value.temperature !== undefined ||
          localParams.value.top_p !== undefined ||
-         localParams.value.max_tokens !== undefined;
+         localParams.value.max_tokens !== undefined ||
+         localParams.value.stream !== undefined ||
+         localParams.value.thinking_enabled !== undefined ||
+         localParams.value.thinking_budget_tokens !== undefined;
 });
-
-// 获取显示值（自定义值或默认值）
-function getDisplayValue(key: 'temperature' | 'top_p' | 'max_tokens'): number {
-  const customVal = localParams.value[key];
-  if (customVal !== undefined) return customVal;
-  return props.defaultParams[key];
-}
 
 // 重置单个参数为默认值
 function resetParam(key: 'temperature' | 'top_p' | 'max_tokens') {
   localParams.value[key] = undefined;
+}
+
+// 重置 thinking 参数
+function resetThinking() {
+  localParams.value.thinking_enabled = undefined;
+  localParams.value.thinking_budget_tokens = undefined;
 }
 
 // 重置所有参数
@@ -78,6 +96,9 @@ function resetAll() {
     temperature: undefined,
     top_p: undefined,
     max_tokens: undefined,
+    stream: undefined,
+    thinking_enabled: undefined,
+    thinking_budget_tokens: undefined,
     useCustom: false
   };
 }
@@ -90,10 +111,8 @@ function handleClose() {
 // 保存参数
 function handleSave() {
   if (!hasCustomValues.value) {
-    // 没有自定义值，清空 paramOverride
     emit('save', null);
   } else {
-    // 构建 paramOverride 对象，只包含非 undefined 的值
     const override: Record<string, unknown> = {};
     if (localParams.value.temperature !== undefined) {
       override.temperature = localParams.value.temperature;
@@ -103,6 +122,19 @@ function handleSave() {
     }
     if (localParams.value.max_tokens !== undefined) {
       override.max_tokens = localParams.value.max_tokens;
+    }
+    if (localParams.value.stream !== undefined) {
+      override.stream = localParams.value.stream;
+    }
+    // 构建 thinking 配置
+    if (localParams.value.thinking_enabled !== undefined || localParams.value.thinking_budget_tokens !== undefined) {
+      const thinking: ThinkingConfig = {
+        enabled: localParams.value.thinking_enabled ?? defaultThinking.value?.enabled ?? false
+      };
+      if (localParams.value.thinking_budget_tokens !== undefined) {
+        thinking.budget_tokens = localParams.value.thinking_budget_tokens;
+      }
+      override.thinking = thinking;
     }
     emit('save', override);
   }
@@ -114,7 +146,7 @@ function handleSave() {
   <Modal
     :open="props.open"
     title="Slot 参数配置"
-    :width="420"
+    :width="460"
     @cancel="handleClose"
     @ok="handleSave"
   >
@@ -214,6 +246,89 @@ function handleSave() {
             </Tooltip>
           </div>
         </Form.Item>
+
+        <!-- Stream 流式输出 -->
+        <Form.Item>
+          <template #label>
+            <div class="param-label">
+              <span>流式输出</span>
+              <span class="default-hint">默认: {{ (props.defaultParams.stream ?? true) ? '开启' : '关闭' }}</span>
+            </div>
+          </template>
+          <div class="param-input-row">
+            <Switch
+              v-model:checked="localParams.stream"
+              checked-children="开"
+              un-checked-children="关"
+            />
+            <Tooltip title="重置为默认值">
+              <Button 
+                type="text" 
+                size="small"
+                :disabled="localParams.stream === undefined"
+                @click="localParams.stream = undefined"
+              >
+                <template #icon><UndoOutlined /></template>
+              </Button>
+            </Tooltip>
+          </div>
+        </Form.Item>
+
+        <!-- Thinking 深度思考配置 -->
+        <Divider style="margin: 12px 0">
+          <span class="divider-text">
+            <BulbOutlined /> 深度思考 (Extended Thinking)
+          </span>
+        </Divider>
+
+        <div class="thinking-hint">
+          <span>启用后，支持的模型（如 Claude 3.5+）将输出思考过程。</span>
+        </div>
+
+        <Form.Item>
+          <template #label>
+            <div class="param-label">
+              <span>启用深度思考</span>
+              <span class="default-hint">默认: {{ defaultThinking?.enabled ? '开启' : '关闭' }}</span>
+            </div>
+          </template>
+          <div class="param-input-row">
+            <Switch
+              v-model:checked="localParams.thinking_enabled"
+              checked-children="开"
+              un-checked-children="关"
+            />
+            <Tooltip title="重置为默认值">
+              <Button 
+                type="text" 
+                size="small"
+                :disabled="localParams.thinking_enabled === undefined && localParams.thinking_budget_tokens === undefined"
+                @click="resetThinking"
+              >
+                <template #icon><UndoOutlined /></template>
+              </Button>
+            </Tooltip>
+          </div>
+        </Form.Item>
+
+        <Form.Item v-if="localParams.thinking_enabled || (localParams.thinking_enabled === undefined && defaultThinking?.enabled)">
+          <template #label>
+            <div class="param-label">
+              <span>思考 Token 预算</span>
+              <span class="default-hint">默认: {{ defaultThinking?.budget_tokens ?? 10000 }}</span>
+            </div>
+          </template>
+          <div class="param-input-row">
+            <InputNumber
+              v-model:value="localParams.thinking_budget_tokens"
+              :min="1024"
+              :max="100000"
+              :step="1000"
+              :placeholder="String(defaultThinking?.budget_tokens ?? 10000)"
+              class="param-input"
+            />
+          </div>
+        </Form.Item>
       </Form>
 
       <!-- 重置所有按钮 -->
@@ -246,6 +361,24 @@ function handleSave() {
   margin-bottom: 16px;
   font-size: 12px;
   color: var(--text-secondary, #666);
+}
+
+.thinking-hint {
+  padding: 6px 10px;
+  background: var(--warning-bg, #fffbe6);
+  border: 1px solid var(--warning-border, #ffe58f);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+}
+
+.divider-text {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .params-form {

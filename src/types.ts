@@ -47,6 +47,7 @@ export type ToolCall = {
 
 export type PluginChunk =
   | { type: 'content'; text: string }
+  | { type: 'thinking'; text: string }
   | { type: 'tool_calls'; toolCalls: ToolCall[] }
   | { type: 'usage'; tokens: SlotMetrics['tokens'] };
 
@@ -66,6 +67,7 @@ export type Slot = {
   selected: boolean;
   status: 'idle' | 'running' | 'done' | 'error' | 'canceled';
   output: string;
+  thinking: string;
   toolCalls: ToolCall[] | null;
   metrics: SlotMetrics;
   historyId?: string;
@@ -82,6 +84,7 @@ export type HistoryItem = {
   requestSnapshot: PluginRequest & { systemPrompt: string };
   responseSnapshot: {
     outputText: string;
+    thinking?: string;
     toolCalls?: ToolCall[];
     usage?: SlotMetrics['tokens'];
     metrics: { ttfbMs: number | null; totalMs: number | null };
@@ -100,6 +103,12 @@ export type VariableBinding = {
   value: string;
 };
 
+// Thinking 配置类型
+export type ThinkingConfig = {
+  enabled: boolean;
+  budget_tokens?: number;
+};
+
 export type SharedState = {
   userPrompts: UserPromptPreset[];
   toolsDefinition: string;
@@ -108,6 +117,8 @@ export type SharedState = {
     temperature: number;
     top_p: number;
     max_tokens: number;
+    stream?: boolean;
+    thinking?: ThinkingConfig;
   };
   enableSuggestions: boolean;
   streamOutput: boolean;

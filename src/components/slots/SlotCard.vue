@@ -344,6 +344,7 @@ function handlePlaceholderChange(value: boolean) {
     <div class="slot-output">
       <OutputBubble
         :output="props.slot.output"
+        :thinking="props.slot.thinking"
         :status="props.slot.status"
         :metrics="props.slot.metrics"
         :tool-calls="props.slot.toolCalls"

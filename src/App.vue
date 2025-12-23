@@ -33,7 +33,7 @@ import SlotsGrid from './components/slots/SlotsGrid.vue';
 import PromptComposer from './components/prompt/PromptComposer.vue';
 import HistoryDrawer from './components/drawers/HistoryDrawer.vue';
 import VarsModal from './components/modals/VarsModal.vue';
-import ParamsModal from './components/modals/ParamsModal.vue';
+import GlobalParamsModal from './components/modals/GlobalParamsModal.vue';
 import ToolsModal from './components/modals/ToolsModal.vue';
 import ProjectSelector from './components/layout/ProjectSelector.vue';
 import CurlImportModal from './components/modals/CurlImportModal.vue';
@@ -533,6 +533,7 @@ function createSlot(copyFrom?: Slot): Slot {
     selected: true,
     status: 'idle',
     output: '',
+    thinking: '',
     toolCalls: null,
     metrics: { ttfbMs: null, totalMs: null }
   };
@@ -807,6 +808,12 @@ function buildRequest(slot: Slot): PluginRequest {
     }))
     .filter((msg) => msg.content.trim().length > 0);
   const userOnlyPrompts = composerMessages.filter((msg) => msg.role !== 'system').map((msg) => msg.content);
+  
+  // 计算 stream 参数：Slot 覆盖 > 全局默认参数 > 全局 streamOutput
+  const slotStream = slot.paramOverride?.stream as boolean | undefined;
+  const globalParamStream = shared.defaultParams.stream;
+  const effectiveStream = slotStream ?? globalParamStream ?? shared.streamOutput;
+  
   return {
     systemPrompt: renderTemplate(slot.systemPrompt, variables),
     userPrompts: userOnlyPrompts,
@@ -814,7 +821,7 @@ function buildRequest(slot: Slot): PluginRequest {
     params: mergeParams(slot),
     modelId: slot.modelId,
     enableSuggestions: shared.enableSuggestions,
-    stream: shared.streamOutput,
+    stream: effectiveStream,
     messages: composerMessages
   };
 }
@@ -898,6 +905,7 @@ async function runSlot(slot: Slot) {
   abortControllersBySlotId.set(slot.id, controller);
   slot.status = 'running';
   slot.output = '';
+  slot.thinking = '';
   slot.toolCalls = null;
   slot.metrics = { ttfbMs: null, totalMs: null };
   const start = performance.now();
@@ -914,6 +922,8 @@ async function runSlot(slot: Slot) {
       }
       if (chunk.type === 'content') {
         slot.output += chunk.text;
+      } else if (chunk.type === 'thinking') {
+        slot.thinking += chunk.text;
       } else if (chunk.type === 'tool_calls') {
         slot.toolCalls = chunk.toolCalls;
       } else if (chunk.type === 'usage') {
@@ -951,6 +961,7 @@ async function runSlot(slot: Slot) {
         requestSnapshot: { ...request, systemPrompt: request.systemPrompt },
         responseSnapshot: {
           outputText: slot.output,
+          thinking: slot.thinking || undefined,
           toolCalls: slot.toolCalls || undefined,
           usage: slot.metrics.tokens,
           metrics: { ttfbMs: slot.metrics.ttfbMs, totalMs: slot.metrics.totalMs }
@@ -1237,7 +1248,7 @@ watch(
       @save="handleVarsSave"
     />
     
-    <ParamsModal
+    <GlobalParamsModal
       :open="showParamsModal"
       :default-params="shared.defaultParams"
       @update:open="showParamsModal = $event"

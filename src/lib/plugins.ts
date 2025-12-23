@@ -104,6 +104,13 @@ async function* streamOpenAIStyle(resp: Response): AsyncGenerator<PluginChunk, v
           }
         }
         const delta = parsed.choices?.[0]?.delta;
+        
+        // 处理 thinking/reasoning 内容（Claude extended thinking / DeepSeek reasoning）
+        const thinkingContent = delta?.thinking || delta?.reasoning_content || delta?.reasoning;
+        if (thinkingContent) {
+          yield { type: 'thinking', text: thinkingContent as string };
+        }
+        
         const content = delta?.content;
         if (content) {
           yield { type: 'content', text: content as string };
@@ -264,6 +271,13 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
       } else {
         const data = await resp.json();
         const message = data?.choices?.[0]?.message;
+        
+        // 处理 thinking/reasoning 内容
+        const thinkingContent = message?.thinking || message?.reasoning_content || message?.reasoning;
+        if (thinkingContent) {
+          yield { type: 'thinking', text: thinkingContent as string };
+        }
+        
         const content = message?.content;
         if (content) {
           yield { type: 'content', text: content as string };

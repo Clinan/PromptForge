@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * OutputBubble - 输出气泡组件
- * 实现 LangUI 风格对话气泡，支持流式输出和光标动画
+ * 实现 LangUI 风格对话气泡，支持流式输出、光标动画和思考内容展示
  * 
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 13.7
  */
@@ -12,13 +12,17 @@ import {
   CheckOutlined,
   ThunderboltOutlined,
   ClockCircleOutlined,
-  FieldTimeOutlined
+  FieldTimeOutlined,
+  BulbOutlined,
+  DownOutlined,
+  RightOutlined
 } from '@ant-design/icons-vue';
 import type { SlotMetrics, ToolCall } from '../../types';
 import JsonEditor from '../JsonEditor.vue';
 
 const props = defineProps<{
   output: string;
+  thinking: string;
   status: 'idle' | 'running' | 'done' | 'error' | 'canceled';
   metrics: SlotMetrics;
   toolCalls: ToolCall[] | null;
@@ -26,10 +30,13 @@ const props = defineProps<{
 }>();
 
 const copied = ref(false);
+const copiedThinking = ref(false);
 const showToolCalls = ref(false);
+const showThinking = ref(true);
 
 const isStreaming = computed(() => props.status === 'running' && props.streamOutput);
 const hasOutput = computed(() => props.output && props.output.length > 0);
+const hasThinking = computed(() => props.thinking && props.thinking.length > 0);
 const hasToolCalls = computed(() => props.toolCalls && props.toolCalls.length > 0);
 
 // Token 统计
@@ -65,6 +72,22 @@ async function copyOutput() {
   }
 }
 
+// 复制思考内容
+async function copyThinking() {
+  if (!props.thinking) return;
+  
+  try {
+    await navigator.clipboard.writeText(props.thinking);
+    copiedThinking.value = true;
+    message.success('思考内容已复制');
+    setTimeout(() => {
+      copiedThinking.value = false;
+    }, 2000);
+  } catch (err) {
+    message.error('复制失败');
+  }
+}
+
 // 获取状态文本
 const statusText = computed(() => {
   switch (props.status) {
@@ -80,6 +103,35 @@ const statusText = computed(() => {
 
 <template>
   <div class="output-bubble-container">
+    <!-- 思考内容气泡 -->
+    <div v-if="hasThinking" class="thinking-section">
+      <div class="thinking-header" @click="showThinking = !showThinking">
+        <Space :size="4">
+          <BulbOutlined class="thinking-icon" />
+          <span class="thinking-title">思考过程</span>
+          <component :is="showThinking ? DownOutlined : RightOutlined" class="expand-icon" />
+        </Space>
+        <Tooltip title="复制思考内容">
+          <Button 
+            type="text" 
+            size="small"
+            @click.stop="copyThinking"
+          >
+            <template #icon>
+              <CheckOutlined v-if="copiedThinking" style="color: var(--success-color)" />
+              <CopyOutlined v-else />
+            </template>
+          </Button>
+        </Tooltip>
+      </div>
+      <div v-show="showThinking" class="thinking-bubble">
+        <div class="thinking-content">
+          <span class="thinking-text">{{ props.thinking }}</span>
+          <span v-if="isStreaming && !hasOutput" class="streaming-cursor"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- 输出气泡 -->
     <div 
       class="output-bubble"
@@ -167,6 +219,61 @@ const statusText = computed(() => {
   gap: 4px;
 }
 
+/* 思考内容样式 */
+.thinking-section {
+  margin-bottom: 4px;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--thinking-header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.thinking-icon {
+  color: #fff;
+  font-size: 12px;
+}
+
+.thinking-title {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.expand-icon {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+}
+
+.thinking-bubble {
+  background: var(--thinking-bg, linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%));
+  border: 1px solid var(--thinking-border, rgba(102, 126, 234, 0.3));
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.thinking-content {
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thinking-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* 输出气泡样式 */
 .output-bubble {
   background: var(--bubble-assistant-bg, #f5f5f5);
   border-radius: 8px;
@@ -265,5 +372,14 @@ const statusText = computed(() => {
 
 [data-theme="dark"] .output-bubble.is-empty {
   background: var(--bg-secondary, #1a202c);
+}
+
+[data-theme="dark"] .thinking-bubble {
+  background: var(--thinking-bg, linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%));
+  border-color: var(--thinking-border, rgba(102, 126, 234, 0.4));
+}
+
+[data-theme="dark"] .thinking-text {
+  color: var(--text-secondary, #a0aec0);
 }
 </style>

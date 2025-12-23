@@ -60,7 +60,8 @@ function createBuildRequestForSlot(slot: Slot) {
     if (props.buildRequestForSlot) {
       return props.buildRequestForSlot(slot);
     }
-    // 返回空请求作为 fallback
+    // 返回空请求作为 fallback，考虑 Slot 级别的 stream 覆盖
+    const slotStream = slot.paramOverride?.stream as boolean | undefined;
     return {
       systemPrompt: slot.systemPrompt,
       userPrompts: [],
@@ -68,7 +69,7 @@ function createBuildRequestForSlot(slot: Slot) {
       params: {},
       modelId: slot.modelId,
       enableSuggestions: false,
-      stream: props.streamOutput,
+      stream: slotStream ?? props.streamOutput,
       messages: []
     };
   };
