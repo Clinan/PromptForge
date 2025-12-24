@@ -27,6 +27,7 @@ const localParams = ref<{
   stream: boolean | undefined;
   thinking_enabled: boolean | undefined;
   thinking_budget_tokens: number | undefined;
+  thinking_force_send: boolean | undefined;
   useCustom: boolean;
 }>({
   temperature: undefined,
@@ -35,6 +36,7 @@ const localParams = ref<{
   stream: undefined,
   thinking_enabled: undefined,
   thinking_budget_tokens: undefined,
+  thinking_force_send: undefined,
   useCustom: false
 });
 
@@ -50,6 +52,7 @@ watch(() => props.open, (isOpen) => {
         stream: props.paramOverride.stream as boolean | undefined,
         thinking_enabled: thinking?.enabled,
         thinking_budget_tokens: thinking?.budget_tokens,
+        thinking_force_send: thinking?.force_send,
         useCustom: true
       };
     } else {
@@ -60,6 +63,7 @@ watch(() => props.open, (isOpen) => {
         stream: undefined,
         thinking_enabled: undefined,
         thinking_budget_tokens: undefined,
+        thinking_force_send: undefined,
         useCustom: false
       };
     }
@@ -76,7 +80,8 @@ const hasCustomValues = computed(() => {
          localParams.value.max_tokens !== undefined ||
          localParams.value.stream !== undefined ||
          localParams.value.thinking_enabled !== undefined ||
-         localParams.value.thinking_budget_tokens !== undefined;
+         localParams.value.thinking_budget_tokens !== undefined ||
+         localParams.value.thinking_force_send !== undefined;
 });
 
 // 重置单个参数为默认值
@@ -88,6 +93,7 @@ function resetParam(key: 'temperature' | 'top_p' | 'max_tokens') {
 function resetThinking() {
   localParams.value.thinking_enabled = undefined;
   localParams.value.thinking_budget_tokens = undefined;
+  localParams.value.thinking_force_send = undefined;
 }
 
 // 重置所有参数
@@ -99,6 +105,7 @@ function resetAll() {
     stream: undefined,
     thinking_enabled: undefined,
     thinking_budget_tokens: undefined,
+    thinking_force_send: undefined,
     useCustom: false
   };
 }
@@ -127,12 +134,15 @@ function handleSave() {
       override.stream = localParams.value.stream;
     }
     // 构建 thinking 配置
-    if (localParams.value.thinking_enabled !== undefined || localParams.value.thinking_budget_tokens !== undefined) {
+    if (localParams.value.thinking_enabled !== undefined || localParams.value.thinking_budget_tokens !== undefined || localParams.value.thinking_force_send !== undefined) {
       const thinking: ThinkingConfig = {
         enabled: localParams.value.thinking_enabled ?? defaultThinking.value?.enabled ?? false
       };
       if (localParams.value.thinking_budget_tokens !== undefined) {
         thinking.budget_tokens = localParams.value.thinking_budget_tokens;
+      }
+      if (localParams.value.thinking_force_send !== undefined) {
+        thinking.force_send = localParams.value.thinking_force_send;
       }
       override.thinking = thinking;
     }
@@ -328,6 +338,23 @@ function handleSave() {
               class="param-input"
             />
           </div>
+        </Form.Item>
+
+        <Form.Item v-if="!(localParams.thinking_enabled || (localParams.thinking_enabled === undefined && defaultThinking?.enabled))">
+          <template #label>
+            <div class="param-label">
+              <span>强制发送参数</span>
+              <span class="default-hint">默认: {{ defaultThinking?.force_send ? '开启' : '关闭' }}</span>
+            </div>
+          </template>
+          <div class="param-input-row">
+            <Switch
+              v-model:checked="localParams.thinking_force_send"
+              checked-children="开"
+              un-checked-children="关"
+            />
+          </div>
+          <div class="param-help">GPT 模型默认不发送 thinking 参数。开启后将强制发送 thinking: false</div>
         </Form.Item>
       </Form>
 

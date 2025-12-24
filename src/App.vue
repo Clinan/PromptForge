@@ -1009,7 +1009,7 @@ async function handleDeleteProject(projectId: string) {
 async function handleCurlImport(result: ImportResult) {
   // 调试日志
   console.log('[handleCurlImport] result.provider:', result.provider);
-  console.log('[handleCurlImport] result.provider.apiKey:', result.provider.apiKey ? '***' : '(empty)');
+  console.log('[handleCurlImport] result.promptsOnly:', result.promptsOnly);
 
   // 如果需要创建新项目
   if (result.isNewProject && result.newProjectName) {
@@ -1022,8 +1022,41 @@ async function handleCurlImport(result: ImportResult) {
     await switchProject(result.targetProjectId);
   }
 
+  // 只导入提示词模式：不处理 Provider，直接导入消息到当前 Slot
+  if (result.promptsOnly) {
+    // 导入系统提示词到第一个 Slot（如果有）
+    if (result.systemPrompt && slots.value.length > 0) {
+      slots.value[0].systemPrompt = result.systemPrompt;
+    }
+
+    // 导入用户消息
+    if (result.messages && result.messages.length > 0) {
+      shared.userPrompts = result.messages.map(msg => ({
+        id: newId(),
+        role: (msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user') as 'user' | 'system' | 'assistant',
+        text: msg.content,
+      }));
+    }
+
+    // 高亮第一个 Slot
+    if (slots.value.length > 0) {
+      highlightedSlotId.value = slots.value[0].id;
+      setTimeout(() => {
+        highlightedSlotId.value = null;
+      }, 2000);
+    }
+
+    saveEditorState();
+    return;
+  }
+
   // 处理 Provider
   const provider = result.provider;
+  if (!provider) {
+    console.warn('[handleCurlImport] No provider in result');
+    return;
+  }
+  
   if (provider.isNew) {
     // 添加新 Provider
     const newProvider: ProviderProfile = {
@@ -1072,8 +1105,8 @@ async function handleCurlImport(result: ImportResult) {
     slots.value.push(targetSlot);
   }
 
-  // 导入消息（如果选择了）
-  if (result.importMessages && result.messages && result.messages.length > 0) {
+  // 导入用户消息
+  if (result.messages && result.messages.length > 0) {
     shared.userPrompts = result.messages.map(msg => ({
       id: newId(),
       role: (msg.role === 'system' || msg.role === 'assistant' ? msg.role : 'user') as 'user' | 'system' | 'assistant',

@@ -107,6 +107,7 @@ export type VariableBinding = {
 export type ThinkingConfig = {
   enabled: boolean;
   budget_tokens?: number;
+  force_send?: boolean; // 强制发送 thinking 参数（即使模型可能不支持）
 };
 
 export type SharedState = {

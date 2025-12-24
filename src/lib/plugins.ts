@@ -239,12 +239,38 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
 
       const useStream = opts.stream !== false && request.stream !== false;
       const messages = normalizeMessages(request);
+      
+      // 智能处理 thinking 参数：
+      // - 如果 enabled 为 true，必须发送（非 GPT 模型或 force_send）
+      // - 如果 enabled 为 false 且 force_send 为 true，发送 thinking: { enabled: false }
+      // - 如果模型 ID 包含 'gpt'（不区分大小写）且未强制发送，不传递
+      const { thinking, ...restParams } = request.params || {};
+      const thinkingConfig = thinking as { enabled?: boolean; budget_tokens?: number; force_send?: boolean } | undefined;
+      const modelIdLower = (request.modelId || '').toLowerCase();
+      const isGptModel = modelIdLower.includes('gpt');
+      
+      const finalParams = { ...restParams };
+      if (thinkingConfig) {
+        if (thinkingConfig.enabled) {
+          // 开启思考：非 GPT 模型必须发送
+          if (!isGptModel) {
+            finalParams.thinking = {
+              enabled: true,
+              ...(thinkingConfig.budget_tokens ? { budget_tokens: thinkingConfig.budget_tokens } : {})
+            };
+          }
+        } else if (thinkingConfig.force_send) {
+          // 关闭思考但强制发送：发送 thinking: { enabled: false }
+          finalParams.thinking = { enabled: false };
+        }
+      }
+      
       const body = {
         model: request.modelId,
         messages,
         tools: parseTools(request.toolsDefinition),
         stream: useStream,
-        ...request.params
+        ...finalParams
       };
 
       const payload = removeEmptyEntries(body);
@@ -300,12 +326,33 @@ function createOpenAICompatiblePlugin(options: OpenAICompatibleConfig): Plugin {
     buildCurl(config, request) {
       const useStream = request.stream !== false;
       const messages = normalizeMessages(request);
+      
+      // 智能处理 thinking 参数（与 invokeChat 逻辑一致）
+      const { thinking, ...restParams } = request.params || {};
+      const thinkingConfig = thinking as { enabled?: boolean; budget_tokens?: number; force_send?: boolean } | undefined;
+      const modelIdLower = (request.modelId || '').toLowerCase();
+      const isGptModel = modelIdLower.includes('gpt');
+      
+      const finalParams = { ...restParams };
+      if (thinkingConfig) {
+        if (thinkingConfig.enabled) {
+          if (!isGptModel) {
+            finalParams.thinking = {
+              enabled: true,
+              ...(thinkingConfig.budget_tokens ? { budget_tokens: thinkingConfig.budget_tokens } : {})
+            };
+          }
+        } else if (thinkingConfig.force_send) {
+          finalParams.thinking = { enabled: false };
+        }
+      }
+      
       const body = removeEmptyEntries({
         model: request.modelId,
         messages,
         tools: parseTools(request.toolsDefinition),
         stream: useStream,
-        ...request.params
+        ...finalParams
       });
 
       const apiKey = config.apiKey || options.apiKeyPlaceholder;

@@ -26,13 +26,15 @@ const localParams = ref<{
   stream: boolean;
   thinking_enabled: boolean;
   thinking_budget_tokens: number;
+  thinking_force_send: boolean;
 }>({
   temperature: 0.7,
   top_p: 1,
   max_tokens: 8192,
   stream: true,
   thinking_enabled: false,
-  thinking_budget_tokens: 10000
+  thinking_budget_tokens: 10000,
+  thinking_force_send: false
 });
 
 // 监听 props 变化，初始化本地状态
@@ -44,7 +46,8 @@ watch(() => props.open, (isOpen) => {
       max_tokens: props.defaultParams.max_tokens,
       stream: props.defaultParams.stream ?? true,
       thinking_enabled: props.defaultParams.thinking?.enabled ?? false,
-      thinking_budget_tokens: props.defaultParams.thinking?.budget_tokens ?? 10000
+      thinking_budget_tokens: props.defaultParams.thinking?.budget_tokens ?? 10000,
+      thinking_force_send: props.defaultParams.thinking?.force_send ?? false
     };
   }
 }, { immediate: true });
@@ -67,11 +70,13 @@ function handleSave() {
   if (localParams.value.thinking_enabled) {
     params.thinking = {
       enabled: true,
-      budget_tokens: localParams.value.thinking_budget_tokens
+      budget_tokens: localParams.value.thinking_budget_tokens,
+      force_send: localParams.value.thinking_force_send
     };
   } else {
     params.thinking = {
-      enabled: false
+      enabled: false,
+      force_send: localParams.value.thinking_force_send
     };
   }
   
@@ -87,7 +92,8 @@ function resetToDefaults() {
     max_tokens: 8192,
     stream: true,
     thinking_enabled: false,
-    thinking_budget_tokens: 10000
+    thinking_budget_tokens: 10000,
+    thinking_force_send: false
   };
 }
 </script>
@@ -178,6 +184,15 @@ function resetToDefaults() {
             class="param-input"
           />
           <div class="param-help">建议值：10000-50000，更大的预算允许更深入的思考</div>
+        </Form.Item>
+
+        <Form.Item v-if="!localParams.thinking_enabled" label="强制发送参数">
+          <Switch
+            v-model:checked="localParams.thinking_force_send"
+            checked-children="开"
+            un-checked-children="关"
+          />
+          <div class="param-help">GPT 模型默认不发送 thinking 参数。开启后将强制发送 thinking: false（某些 API 可能需要）</div>
         </Form.Item>
       </Form>
 

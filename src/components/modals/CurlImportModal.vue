@@ -42,11 +42,11 @@ export interface ImportResult {
   targetProjectId: string;
   isNewProject: boolean;
   newProjectName?: string;
-  provider: ProviderProfile & { isNew: boolean };
+  provider: ProviderProfile & { isNew: boolean } | null;
   modelId: string | null;
   messages: Array<{ role: string; content: string }> | null;
   systemPrompt: string | null;
-  importMessages: boolean;
+  promptsOnly: boolean;  // 只导入提示词，不处理 Provider
 }
 
 // 内部状态
@@ -54,7 +54,7 @@ const curlInput = ref('');
 const targetProjectId = ref(props.currentProjectId);
 const createNewProject = ref(false);
 const newProjectName = ref('');
-const importMessages = ref(true);
+const promptsOnly = ref(false);  // 只导入提示词，不处理 Provider
 const error = ref<string | null>(null);
 const loading = ref(false);
 
@@ -76,7 +76,7 @@ function resetState() {
   targetProjectId.value = props.currentProjectId;
   createNewProject.value = false;
   newProjectName.value = '';
-  importMessages.value = true;
+  promptsOnly.value = false;
   error.value = null;
   loading.value = false;
 }
@@ -139,6 +139,30 @@ async function handleImport() {
     // 提取模型和消息
     const { modelId, messages, systemPrompt } = extractModelAndMessages(parsed.body);
     
+    // 只导入提示词模式：不处理 Provider
+    if (promptsOnly.value) {
+      // 确定目标项目 ID
+      const finalProjectId = createNewProject.value 
+        ? '__new__' 
+        : targetProjectId.value;
+
+      const result: ImportResult = {
+        targetProjectId: finalProjectId,
+        isNewProject: createNewProject.value,
+        newProjectName: createNewProject.value ? newProjectName.value.trim() : undefined,
+        provider: null,
+        modelId: null,
+        messages,
+        systemPrompt,
+        promptsOnly: true,
+      };
+
+      emit('import', result);
+      message.success(`导入成功！已导入${systemPrompt ? '系统提示词' : ''}${systemPrompt && messages?.length ? '和' : ''}${messages?.length ? '用户消息' : ''}`);
+      handleClose();
+      return;
+    }
+
     // 查找或创建 Provider（匹配 baseUrl、pluginId 和 apiKey）
     const existingProvider = findMatchingProvider(
       props.providerProfiles,
@@ -182,9 +206,9 @@ async function handleImport() {
       newProjectName: createNewProject.value ? newProjectName.value.trim() : undefined,
       provider,
       modelId,
-      messages: importMessages.value ? messages : null,
-      systemPrompt: importMessages.value ? systemPrompt : null,
-      importMessages: importMessages.value,
+      messages,
+      systemPrompt,
+      promptsOnly: false,
     };
 
     // 发送导入事件
@@ -266,10 +290,10 @@ async function handleImport() {
       <!-- 导入选项 -->
       <div class="form-item">
         <Checkbox
-          v-model:checked="importMessages"
+          v-model:checked="promptsOnly"
           :disabled="loading"
         >
-          同时导入消息内容（系统提示词和用户消息）
+          只导入提示词（不创建/匹配 Provider）
         </Checkbox>
       </div>
 
@@ -280,6 +304,7 @@ async function handleImport() {
           <li>系统会自动检测 API 类型（OpenAI、Gemini、通义等）</li>
           <li>仅当 URL、插件类型和 API Key 完全相同时才复用现有 Provider</li>
           <li>导入后会自动配置一个 Slot 使用该 Provider</li>
+          <li>勾选"只导入提示词"可仅导入系统提示词和用户消息到当前 Slot</li>
         </ul>
       </div>
     </div>
