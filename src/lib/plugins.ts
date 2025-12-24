@@ -1,5 +1,6 @@
 import type { Plugin, ProviderProfile, ToolCall, PluginChunk } from '../types';
 import { assertToolsDefinition } from './tools';
+import { hasMeaningfulContent } from './textUtils';
 
 type PluginRequest = import('../types').PluginRequest;
 type PluginInvokeOptions = import('../types').PluginInvokeOptions;
@@ -159,11 +160,15 @@ function normalizeMessages(request: PluginRequest) {
           role: msg && typeof msg.role === 'string' ? msg.role : 'user',
           content: typeof msg.content === 'string' ? msg.content : ''
         }))
-        .filter((msg) => msg.content.trim().length > 0)
+        .filter((msg) => hasMeaningfulContent(msg.content))
     : null;
-  const fallbackMessages = request.userPrompts.map((content) => ({ role: 'user', content }));
+  // 过滤无意义内容的 user prompts
+  const fallbackMessages = request.userPrompts
+    .filter((content) => hasMeaningfulContent(content))
+    .map((content) => ({ role: 'user', content }));
   const messages = normalizedMessages?.length ? normalizedMessages.slice() : fallbackMessages.slice();
-  if ((request.systemPrompt || '').trim()) {
+  // 只有有意义内容的 system prompt 才添加
+  if (hasMeaningfulContent(request.systemPrompt)) {
     messages.unshift({ role: 'system', content: request.systemPrompt });
   }
   return messages;
