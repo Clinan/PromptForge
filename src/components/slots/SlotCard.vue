@@ -9,6 +9,7 @@ import { computed, ref } from 'vue';
 import { 
   Card, 
   Select, 
+  AutoComplete,
   Button, 
   Space, 
   Progress, 
@@ -61,8 +62,8 @@ const providerOptions = computed(() => [
   ...props.providerProfiles.map(p => ({ value: p.id, label: p.name }))
 ]);
 
-// Model 选项
-const modelSelectOptions = computed(() => 
+// Model 选项 - 用于 AutoComplete
+const modelAutoCompleteOptions = computed(() => 
   props.modelOptions.map(m => ({ value: m.id, label: m.label || m.id }))
 );
 
@@ -240,12 +241,12 @@ function handlePlaceholderChange(value: boolean) {
         />
         
         <div class="model-select-wrapper">
-          <Select
+          <AutoComplete
             :value="props.slot.modelId || undefined"
-            :options="modelSelectOptions"
+            :options="modelAutoCompleteOptions"
             placeholder="选择或输入模型"
-            show-search
             :filter-option="(input: string, option: any) => 
+              option?.value?.toLowerCase().includes(input.toLowerCase()) ||
               option?.label?.toLowerCase().includes(input.toLowerCase())"
             class="model-select"
             @change="(val: any) => handleModelChange(String(val || ''))"
@@ -446,13 +447,21 @@ function handlePlaceholderChange(value: boolean) {
   flex: 1;
 }
 
-.model-select :deep(.ant-select-selector) {
+.model-select :deep(.ant-select-selector),
+.model-select :deep(.ant-input) {
   font-size: 12px;
   height: 26px !important;
+  line-height: 24px !important;
 }
 
-.model-select :deep(.ant-select-selection-item) {
-  line-height: 24px !important;
+.model-select :deep(.ant-select-selection-search-input) {
+  height: 24px !important;
+}
+
+/* 修复 AutoComplete 下拉选项的选中高亮样式 */
+.model-select :deep(.ant-select-item-option-active),
+.model-select :deep(.ant-select-item-option-selected) {
+  border-radius: 4px;
 }
 
 .slot-system-prompt {
